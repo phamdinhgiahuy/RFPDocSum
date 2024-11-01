@@ -1,0 +1,85 @@
+{% extends "base.html" %} {% block title %}Home Page{% endblock %} {% block
+content %}
+<div class="container mt-5">
+  <h1 class="mb-4">Welcome, {{ user }}!</h1>
+
+  <!-- Flash messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %} {% if
+  messages %} {% for category, message in messages %}
+  <div
+    class="alert alert-{{ category }} alert-dismissible fade show"
+    role="alert"
+  >
+    {{ message }}
+    <button
+      type="button"
+      class="btn-close"
+      data-bs-dismiss="alert"
+      aria-label="Close"
+    ></button>
+  </div>
+  {% endfor %} {% endif %} {% endwith %}
+
+  <!-- User form -->
+  <form
+    action="{{ url_for('user') }}"
+    method="POST"
+    class="needs-validation"
+    novalidate
+  >
+    <div class="mb-3">
+      <label for="email" class="form-label">Email</label>
+      <input
+        type="email"
+        name="email"
+        class="form-control"
+        id="email"
+        placeholder="Enter your email"
+        value="{{ email if email else '' }}"
+        required
+      />
+      <div class="invalid-feedback">Please enter a valid email address.</div>
+    </div>
+
+    <div class="mb-3">
+      <label for="password" class="form-label">Password</label>
+      <input
+        type="password"
+        name="password"
+        class="form-control"
+        id="password"
+        placeholder="Enter your password"
+        required
+      />
+      <div class="invalid-feedback">Please provide your password.</div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Submit</button>
+  </form>
+</div>
+
+<script>
+  // Bootstrap form validation
+  (function () {
+    "use strict";
+
+    var forms = document.querySelectorAll(".needs-validation");
+
+    Array.prototype.slice.call(forms).forEach(function (form) {
+      form.addEventListener(
+        "submit",
+        function (event) {
+          if (!form.checkValidity()) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+
+          form.classList.add("was-validated");
+        },
+        false
+      );
+    });
+  })();
+</script>
+
+{% endblock %}
