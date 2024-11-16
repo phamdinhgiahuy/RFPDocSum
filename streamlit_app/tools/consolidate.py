@@ -8,14 +8,6 @@ import subprocess
 import platform
 import io
 
-# def open_file_location(file_path):
-#     if platform.system() == "Windows":
-#         os.startfile(file_path)
-#     elif platform.system() == "Darwin":
-#         subprocess.Popen(["open", file_path])
-#     else:
-#         subprocess.Popen(["xdg-open", file_path])
-
 
 def save_consolidated_file(consolidated):
     file_stream = io.BytesIO()
@@ -61,31 +53,28 @@ def copy_cells(source_sheet, target_sheet):
             target_cell.alignment = copy(source_cell.alignment)
 
 
-def get_files(supplier_info, sheet_indexes):
-    dfs_price = {}
-    worksheets_price = {}
-
+def get_files(supplier_info, sheet_indexes, doc_type):
+    dfs = {}
+    worksheets = {}
     for supplier in supplier_info:
-        if supplier.get("Pricing"):
-            dfs_price[supplier["name"]] = []
-            worksheets_price[supplier["name"]] = []
+        if supplier.get(doc_type):
+            dfs[supplier["name"]] = []
+            worksheets[supplier["name"]] = []
         else:
-            st.error("No Pricing file found for supplier.", icon="❌")
+            st.warning(
+                f"No {doc_type} file found for supplier {supplier['name']}.", icon="⚠️"
+            )
             continue
-
-        sup_excel = load_workbook(supplier["Pricing"])
+        sup_excel = load_workbook(supplier[doc_type])
         sheets_name = [sup_excel.sheetnames[i] for i in sheet_indexes]
-
         for sheet in sheets_name:
-            temp_df = pd.read_excel(supplier["Pricing"], sheet_name=sheet, header=7)
-            dfs_price[supplier["name"]].append(temp_df)
-            worksheets_price[supplier["name"]].append(sup_excel[sheet])
-
-    return dfs_price, worksheets_price
+            temp_df = pd.read_excel(supplier[doc_type], sheet_name=sheet, header=7)
+            dfs[supplier["name"]].append(temp_df)
+            worksheets[supplier["name"]].append(sup_excel[sheet])
+    return dfs, worksheets
 
 
 st.write("# RFP Suppliers' Response Consolidation")
-
 if (
     "suppliers" not in st.session_state
     or st.session_state.suppliers[0].get("Pricing") is None
@@ -94,105 +83,69 @@ if (
     st.stop()
 
 st.header("Pricing Sheets Consolidation")
-
 first_supplier_file = st.session_state.suppliers[0]["Pricing"]
 workbook = load_workbook(first_supplier_file)
 available_sheets = workbook.sheetnames
-
-st.write("Available sheets in the first supplier's Pricing file:")
 pricing_sheets_list = st.multiselect(
     "Select Pricing sheet(s) to consolidate", available_sheets, available_sheets
 )
-
 chosen_sheet_indices = [available_sheets.index(sheet) for sheet in pricing_sheets_list]
-
 pricing_option = st.radio(
     "Choose consolidation method for Pricing sheets:",
     ("Side by Side", "Separate Sheets"),
     index=0,
 )
 
-if st.button("Consolidate Sheets"):
+if st.button("Consolidate Pricing Sheets"):
     consolidated = openpyxl.Workbook()
-    if pricing_option == "Side by Side":
-        st.write("Consolidating Pricing sheets side by side...")
-        # Side by Side consolidation logic here
-    else:
-        st.write("Consolidating Pricing documents into separate sheets...")
+    consolidated.remove(consolidated["Sheet"])
+    dfs_price, worksheets_price = get_files(
+        st.session_state.suppliers, chosen_sheet_indices, "Pricing"
+    )
+    for supplier in worksheets_price:
+        for sheet in worksheets_price[supplier]:
+            title = f"{supplier}_{sheet.title}"[:30]
+            target_sheet = consolidated.create_sheet(title)
+            copy_sheet(sheet, target_sheet)
+    file_stream = save_consolidated_file(consolidated)
+    st.download_button(
+        "Download Consolidated Pricing File",
+        data=file_stream,
+        file_name="pricing_consolidated.xlsx",
+    )
 
-        dfs_price, worksheets_price = get_files(
-            st.session_state.suppliers, chosen_sheet_indices
-        )
-
-        for supplier in worksheets_price:
-            for sheet in worksheets_price[supplier]:
-                title = f"{supplier}_{sheet.title}"
-                # trim the title if it's too long
-                if len(title) > 30:
-                    title = title[:30]
-                target_sheet = consolidated.create_sheet(title)
-                copy_sheet(sheet, target_sheet)
-        if "Sheet" in consolidated.sheetnames:
-            consolidated.remove(consolidated["Sheet"])
-        file_stream = save_consolidated_file(consolidated)
-        # export_path = "pricing_consolidated.xlsx"
-
-        # consolidated.save(export_path)
-        st.success(
-            "Consolidated Pricing and Implementation sheets saved as 'pricing_consolidated.xlsx",
-            icon="✅",
-        )
-        # if st.button("Show File in Folder"):
-        #     open_file_location(os.path.abspath(export_path))
-        st.download_button(
-            label="Download Consolidated File",
-            data=file_stream,
-            file_name="pricing_consolidated.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
-
-st.header("Questionaire Sheets Consolidation")
-
+st.header("Questionnaire Sheets Consolidation")
+first_supplier_file_q = st.session_state.suppliers[0]["Questionnaire"]
+workbook_q = load_workbook(first_supplier_file_q)
+available_sheets_q = workbook_q.sheetnames
+questionnaire_sheets_list = st.multiselect(
+    "Select Questionnaire sheet(s) to consolidate",
+    available_sheets_q,
+    available_sheets_q,
+)
+chosen_sheet_indices_q = [
+    available_sheets_q.index(sheet) for sheet in questionnaire_sheets_list
+]
 questionnaire_option = st.radio(
     "Choose consolidation method for Questionnaire sheets:",
     ("Side by Side", "Separate Sheets"),
     index=0,
 )
 
-first_supplier_file_q = st.session_state.suppliers[0]["Questionnaire"]
-workbook_q = load_workbook(first_supplier_file_q)
-available_sheets_q = workbook_q.sheetnames
-
-st.write("Available sheets in the first supplier's Questionnaire file:")
-questionnaire_sheets_list = st.multiselect(
-    "Select Questionnaire sheet(s) to consolidate",
-    available_sheets_q,
-    available_sheets_q,
-)
-
-chosen_sheet_indices_q = [
-    available_sheets_q.index(sheet) for sheet in questionnaire_sheets_list
-]
-
-if questionnaire_option == "Side by Side":
-    st.write("Consolidating Questionnaire sheets side by side...")
-    # Side by Side consolidation logic here
-else:
-    st.write("Consolidating Questionnaire sheets into separate sheets...")
+if st.button("Consolidate Questionnaire Sheets"):
+    consolidated_q = openpyxl.Workbook()
+    consolidated_q.remove(consolidated_q["Sheet"])
     dfs_questionnaire, worksheets_questionnaire = get_files(
-        st.session_state.suppliers, chosen_sheet_indices_q
+        st.session_state.suppliers, chosen_sheet_indices_q, "Questionnaire"
     )
-
     for supplier in worksheets_questionnaire:
         for sheet in worksheets_questionnaire[supplier]:
-            title = f"{supplier}_{sheet.title}"
-            target_sheet = consolidated.create_sheet(title)
+            title = f"{supplier}_{sheet.title}"[:30]
+            target_sheet = consolidated_q.create_sheet(title)
             copy_sheet(sheet, target_sheet)
-    if "Sheet" in consolidated.sheetnames:
-        consolidated.remove(consolidated["Sheet"])
-
-    consolidated.save("questionnaire_consolidated.xlsx")
-    st.success(
-        "Consolidated Questionnaire sheets saved as 'consolidated.xlsx'", icon="✅"
+    file_stream_q = save_consolidated_file(consolidated_q)
+    st.download_button(
+        "Download Consolidated Questionnaire File",
+        data=file_stream_q,
+        file_name="questionnaire_consolidated.xlsx",
     )
