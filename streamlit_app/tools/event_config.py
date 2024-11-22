@@ -15,26 +15,24 @@ doc_type1, doc_type2 = st.session_state.doc_types
 
 # Event Option
 if "event_option" not in st.session_state:
-    st.session_state.event_option = "Combined Pricing and Questionnaire Document"
+    st.session_state.event_option = "In a Single File"
 event_option = st.radio(
-    "Choose the response document configuration for this event",
+    "Please select the Pricing and Questionnaire documents configuration for this event",
     (
-        "Combined Pricing and Questionnaire Document",
-        "Separate Pricing and Questionnaire Documents",
+        "In a Single File",
+        "In Separate Files",
     ),
-    index=(
-        "Combined Pricing and Questionnaire Document",
-        "Separate Pricing and Questionnaire Documents",
-    ).index(st.session_state.event_option),
+    index=(0 if st.session_state.event_option == "In a Single File" else 1),
 )
 st.session_state.event_option = event_option
+
 
 # Template Files
 if "template_files" not in st.session_state:
     st.session_state.template_files = {doc_type1: None, doc_type2: None}
 
 st.write("### Event Template Files")
-if event_option == "Combined Pricing and Questionnaire Document":
+if event_option == "In a Single File":
     combined_template = st.file_uploader(
         "Please upload combined template file", key="combined_template"
     )
@@ -72,7 +70,7 @@ if len(st.session_state.suppliers) != num_suppliers:
         st.session_state.suppliers = st.session_state.suppliers[:num_suppliers]
 
 # Supplier details
-if event_option == "Combined Pricing and Questionnaire Document":
+if event_option == "In a Single File":
     st.write(
         "Please upload the combined Pricing and Questionnaire documents for each supplier"
     )
@@ -94,7 +92,7 @@ if event_option == "Combined Pricing and Questionnaire Document":
                 st.session_state.suppliers[i][doc_type2] = uploaded_file
 else:
     for i in range(num_suppliers):
-        with st.expander(f"Supplier {i+1} Information"):
+        with st.expander(f"Supplier {i+1} Information", expanded=True):
             supplier_name = st.text_input(
                 f"Supplier {i+1} Name",
                 value=st.session_state.suppliers[i]["name"],
