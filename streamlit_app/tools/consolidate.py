@@ -14,6 +14,24 @@ from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
 from fuzzywuzzy import fuzz
 from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
+from itertools import cycle
+from collections import deque
+
+
+def fill_color_switch():
+    colors = [
+        "E4DFEC",
+        "D4D5F8",
+        "DFD2FA",
+        "D9E5F3",
+        "E0E0EC",
+        "E7DAF2",
+        "E3E9E9",
+        "CC79A7",
+        "009E73",
+        "0072B2",
+    ]
+    return cycle(colors)
 
 
 # Function to find common columns by comparing values
@@ -117,134 +135,199 @@ def separate_sheet_combine(
     return workbook
 
 
+def create_insertion_queue(common_columns, supplier_value_columns_dict):
+    # Initialize a list to hold queue items
+    queue_items = []
+
+    # Add common columns from the template to the queue
+    for col in common_columns:
+        queue_items.append({"column_letter": col, "source": "template"})
+
+    # Add supplier columns to the queue
+    for supplier, supplier_columns in supplier_value_columns_dict.items():
+        for col in supplier_columns:
+            queue_items.append({"column_letter": col, "source": supplier})
+
+    # Sort the queue by column letter and include a secondary sort by source type
+    # Priority: template columns come before supplier columns with the same letter
+    queue_items.sort(key=lambda x: (x["column_letter"], x["source"] != "template"))
+
+    # Convert the sorted list into a deque (queue structure)
+    insertion_queue = deque(queue_items)
+
+    return insertion_queue
+
+
 def side_by_side_combine(
     workbook,
     template_sheets,
     supplier_sheets_dict,
     threshold=80,
+    summary_option=False,
 ):
     st.toast(f"Combining files in progress...", icon="⏳")
+
+    # Iterate over each template sheet
     for idx, template_sheet in enumerate(template_sheets):
+        print(f"Processing template sheet: {template_sheet.title}")
 
-        # create a new sheet in the workbook for each template sheet
+        # Create a new sheet in the workbook for each template sheet
         target_sheet = workbook.create_sheet(template_sheet.title)
-        # copy sheet attributes from the template sheet to the target sheet
 
+        # Initialize variables to store column data and mismatched rows
         common_columns = []
         uncommon_columns = []
         mis_mat_rows_dict = {}
         supplier_value_columns_dict = {}
+        supplier_colors = {}
+        color_cycle = fill_color_switch()
+
+        # Iterate over each supplier and process their sheet
         for supplier in supplier_sheets_dict:
+            if supplier not in supplier_colors:
+                supplier_colors[supplier] = next(color_cycle)
+
             supplier_sheet = supplier_sheets_dict[supplier][idx]
             com_columns, mis_mat_rows, supplier_value_columns = find_matching_cols(
                 template_sheet, supplier_sheet, threshold
             )
-            # if values in com_columns not already in common_columns, add them
+
+            # Debug: Print matched and mismatched columns
+            print(f"Supplier: {supplier}")
+            print(f"  Common Columns: {com_columns}")
+            print(f"  Mismatched Rows: {mis_mat_rows}")
+            print(f"  Supplier Value Columns: {supplier_value_columns}")
+
+            # Add matching columns to the final list (ensure no duplicates)
             common_columns.extend(
                 [col for col in com_columns if col not in common_columns]
             )
-            # if values in supplier_value_columns not already in uncommon_columns, add them
             uncommon_columns.extend(
                 [col for col in supplier_value_columns if col not in uncommon_columns]
             )
-            print(f"Common Columns: {com_columns}")
-            print(f"Mismatched Rows: {mis_mat_rows}")
-            print(f"Supplier Value Columns: {supplier_value_columns}")
+
+            # Store mismatched rows and value columns for the supplier
             mis_mat_rows_dict[supplier] = mis_mat_rows
             supplier_value_columns_dict[supplier] = supplier_value_columns
-        # write the common columns from the template sheet to the target sheet
-        for col in common_columns:
-            # column letter to index
-            col_idx = openpyxl.utils.column_index_from_string(col)
-            # copy the template value columns to the col idx
-            copy_column(template_sheet, target_sheet, col_idx, col_idx)
 
-        # insert the supplier value columns to the target sheet
-        print(
-            f"Mismatched Rows Dict for the template sheet {template_sheet.title}: {mis_mat_rows_dict}"
-        )
-        print("###########")
-        print(
-            f"Supplier Value Columns Dict for the template sheet {template_sheet.title}: {supplier_value_columns_dict}"
-        )
-        num_inserts = len(supplier_sheets_dict) - 1
-        insert_offset = 0
-        uncommon_columns = sorted(
-            uncommon_columns, key=lambda x: openpyxl.utils.column_index_from_string(x)
-        )
-        print(f"Uncommon Columns: {uncommon_columns}")
-        for col in uncommon_columns:
-            # column letter to index
-            col_idx = openpyxl.utils.column_index_from_string(col)
-            # insert a new column at the position of the uncommon column
-            for i in range(num_inserts):
-                insert_idx = col_idx + insert_offset
-                target_sheet.insert_cols(insert_idx + 1)
-                insert_offset += 1
-            # copy the template value columns to the col idx
+        # Copy common columns from template to target sheet
+        print(f"Template Common Columns: {common_columns}")
+        print(f"Supplier Value Columns: {supplier_value_columns_dict}")
+        queue = create_insertion_queue(common_columns, supplier_value_columns_dict)
+        if not queue:
+            print("No columns to process for this template sheet.")
+            continue
 
-        for i, (supplier, value_columns) in enumerate(
-            supplier_value_columns_dict.items()
-        ):
-            # insert_offset = 0
-            mis_mat_rows = mis_mat_rows_dict[supplier]
-            for j, col in enumerate(value_columns):
-                col_idx = openpyxl.utils.column_index_from_string(col)
-                tar_idx = col_idx + j * num_inserts + i
+        for i, item in enumerate(queue):
+            col_letter = item["column_letter"]
+            source = item["source"]
+            header_fill_color = None
+            mis_mat_rows = None
+            # Determine the source sheet
+            if source == "template":
+                source_sheet = template_sheet
+            else:
+                source_sheet = supplier_sheets_dict[source][idx]
+                header_fill_color = supplier_colors[source]
+                mis_mat_rows = mis_mat_rows_dict[source]
 
-                copy_column(
-                    supplier_sheets_dict[supplier][idx], target_sheet, col_idx, tar_idx
-                )
-                print(
-                    f"copy column {col_idx} for supplier: {supplier} to column: {tar_idx} in sheet: {target_sheet.title}"
-                )
-                # change the header of the column to include the supplier name
-                target_sheet.cell(row=1, column=tar_idx, value=f"{supplier}")
-                # Format the header cell
-                header_cell = target_sheet.cell(row=1, column=tar_idx)
-                header_cell.font = Font(
-                    name="Arial", size=15, bold=True, color="FFFFFF"
-                )
+            # Get column indices
+            col_idx_source = column_index_from_string(col_letter)
+            col_idx_target = i + 1  # Insert in the order of the queue
+
+            # Copy column
+            print(
+                f"Copying column {col_letter} from {source} to target at index {col_idx_target}"
+            )
+            copy_column(source_sheet, target_sheet, col_idx_source, col_idx_target)
+            # format the header cell for the supplier if there are mismatched rows
+            if header_fill_color:
+                header_cell = target_sheet.cell(row=1, column=col_idx_target)
                 header_cell.fill = PatternFill(
-                    start_color="0080ff", end_color="0080ff", fill_type="solid"
+                    fill_type="solid", start_color=header_fill_color
                 )
-                header_cell.border = Border(
-                    left=Side(style="thin"),
-                    right=Side(style="thin"),
-                    top=Side(style="thin"),
-                    bottom=Side(style="thin"),
-                )
-                # center the header text
+                # change the value of the header cell to include the supplier name
+                if header_cell.value:
+                    header_cell.value = f"{source}  {header_cell.value}"
+                else:
+                    header_cell.value = f"{source}"
+
+                header_cell.font = Font(size=15, b=True)
                 header_cell.alignment = Alignment(
                     horizontal="center", vertical="center"
                 )
-
-                # highlight the mismatched rows
+                # apply color formatting to the data rows
+                for row in target_sheet.iter_rows(
+                    min_row=2,
+                    max_row=target_sheet.max_row,
+                    min_col=col_idx_target,
+                    max_col=col_idx_target,
+                ):
+                    for cell in row:
+                        cell.fill = PatternFill(
+                            fill_type="solid", start_color=header_fill_color
+                        )
+                # apply color formatting to the mismatched rows
                 if mis_mat_rows:
-                    for mis_mat_row in mis_mat_rows:
-                        # check the coordinates of the mismatched row
+                    for row in mis_mat_rows:
                         col_mis, row_mis = openpyxl.utils.cell.coordinate_from_string(
-                            mis_mat_row
+                            row
                         )
-                        st.toast(
-                            f"Detected template discrepancy in cell: {mis_mat_row} sheet: {template_sheet.title} for supplier: {supplier}",
-                            icon="⚠️",
-                        )
-                        # make the cell background red
-                        target_sheet.cell(row=row_mis, column=tar_idx).fill = (
-                            PatternFill(
-                                start_color="FAA0A0",
-                                end_color="FAA0A0",
-                                fill_type="solid",
+                        row_mis = int(row_mis)  # Convert to integer
+                        col_mis = column_index_from_string(
+                            col_mis
+                        )  # Convert to integer
+                        if col_mis and row_mis:
+                            target_sheet.cell(row=row_mis, column=col_mis).fill = (
+                                PatternFill(
+                                    start_color="FAA0A0",
+                                    end_color="FAA0A0",
+                                    fill_type="solid",
+                                )
                             )
+                # Add summary if requested
+                if summary_option:
+                    source_text = " ".join(
+                        str(cell.value)
+                        for row in target_sheet.iter_rows(
+                            min_row=2,
+                            max_row=target_sheet.max_row,
+                            min_col=col_idx_target,
+                            max_col=col_idx_target,
+                        )
+                        for cell in row
+                        if cell.value
+                        and not str(cell.value)
+                        .replace(".", "", 1)
+                        .isdigit()  # Exclude numbers
+                    )
+                    if len(source_text.split()) > 5:
+                        summary = summarize_column_simple(source_text)
+                        target_sheet.cell(
+                            row=target_sheet.max_row + 1,
+                            column=col_idx_target,
+                            value="Summary:",
+                        )
+                        summary_cell = target_sheet.cell(
+                            row=target_sheet.max_row + 1, column=col_idx_target
+                        )
+                        summary_cell.value = summary
+                        summary_cell.font = Font(b=True)
+                        summary_cell.fill = PatternFill(
+                            fill_type="solid", start_color="BFFFFF"
+                        )
+                        summary_cell.alignment = Alignment(
+                            horizontal="center", vertical="center", wrap_text=True
                         )
 
-        # toast the completion of the sheet
-        # st.toast(f"{template_sheet.title} consolidated!", icon="✔️")
-    # remove the default sheet
+        # Copy the template sheet attributes to the target sheet
+        # copy_sheet_attributes(template_sheet, target_sheet)
+        st.toast(f"{template_sheet.title} consolidated!", icon="✔️")
+    # Remove the default sheet if it exists
     if "Sheet" in workbook.sheetnames:
         workbook.remove(workbook["Sheet"])
 
+    # Final success toast
     st.toast("Side-By-Side File combined successfully! Ready to download", icon="🎉")
 
     return workbook
@@ -286,15 +369,32 @@ def append_logo(workbook, image_path, image_scale=0.8):
     return workbook
 
 
-def copy_column(source_sheet, target_sheet, souce_col_idx, target_col_idx):
-
-    source_col_letter = get_column_letter(souce_col_idx)
+def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
+    source_col_letter = get_column_letter(source_col_idx)
     target_col_letter = get_column_letter(target_col_idx)
 
-    for row in range(1, source_sheet.max_row + 1):
-        source_cell = source_sheet.cell(row=row, column=souce_col_idx)
-        target_cell = target_sheet.cell(row=row, column=target_col_idx)
+    # Initialize target_row at the first row of the target sheet
+    target_row = 1
+    hidden_count = 0
 
+    # Iterate over each row in the source sheet
+    for row in range(1, source_sheet.max_row + 1):
+        source_cell = source_sheet.cell(row=row, column=source_col_idx)
+        target_cell = target_sheet.cell(row=target_row, column=target_col_idx)
+
+        # Skip hidden rows in the source sheet
+        if (
+            row in source_sheet.row_dimensions
+            and source_sheet.row_dimensions[row].hidden
+        ):
+            hidden_count += 1
+            if hidden_count > 30:
+                print("More than 30 hidden rows detected. breaking the loop.")
+                break
+
+            continue
+
+        # Copy the value and other properties (styles, comments, hyperlinks)
         target_cell.value = source_cell.value
         target_cell.data_type = source_cell.data_type
 
@@ -308,38 +408,70 @@ def copy_column(source_sheet, target_sheet, souce_col_idx, target_col_idx):
 
         if source_cell.hyperlink:
             target_cell.hyperlink = source_cell.hyperlink
-        # Copy comment if present
+
         if source_cell.comment:
             target_cell.comment = copy(source_cell.comment)
 
+        # Increment the target row index for the next copy
+        target_row += 1
+
+    # Copy column width and hidden property
     source_dim = source_sheet.column_dimensions[source_col_letter]
     target_dim = target_sheet.column_dimensions[target_col_letter]
 
-    target_dim.width = copy(source_dim.width)
+    for key, value in source_dim.__dict__.items():
+        if key in [
+            "width",
+            "hidden",
+        ]:  # , "min", "max", "hidden", "auto_size", "bestFit"]:
+            target_dim.__dict__[key] = value
 
 
 # function to copy the sheet from source to target
 def copy_sheet(source_sheet, target_sheet):
-    # get all columns in the source sheet
-    for col in source_sheet.iter_cols(max_col=50):
+    # Copy all columns
+    hidden_count = 0
+    for col in source_sheet.iter_cols():
         col_idx = col[0].column
+        # Check if the column is hidden
+        col_letter = get_column_letter(col_idx)
+        if source_sheet.column_dimensions[col_letter].hidden:
+            hidden_count += 1
+            if hidden_count > 20:
+                print("More than 20 hidden columns detected. Stopping the loop.")
+                break
+
+            continue
+
+        # Copy the column to the same index in the target
         copy_column(source_sheet, target_sheet, col_idx, col_idx)
+
+    # Copy sheet-level attributes
     copy_sheet_attributes(source_sheet, target_sheet)
 
 
-# function to copy the sheet attributes from source to target
 def copy_sheet_attributes(source_sheet, target_sheet):
+    # Copy basic sheet attributes
     target_sheet.sheet_format = copy(source_sheet.sheet_format)
     target_sheet.sheet_properties = copy(source_sheet.sheet_properties)
-    target_sheet.merged_cells = copy(source_sheet.merged_cells)
     target_sheet.page_margins = copy(source_sheet.page_margins)
-    target_sheet.freeze_panes = copy(source_sheet.freeze_panes)
+    target_sheet.page_setup = copy(source_sheet.page_setup)
+    target_sheet.print_options = copy(source_sheet.print_options)
+    target_sheet.auto_filter = copy(source_sheet.auto_filter)
+    target_sheet.print_area = source_sheet.print_area
+    target_sheet.freeze_panes = source_sheet.freeze_panes
 
+    # Copy row dimensions
     for rn, source_row in source_sheet.row_dimensions.items():
         target_sheet.row_dimensions[rn] = copy(source_row)
 
-    for key, value in source_sheet.column_dimensions.items():
-        target_sheet.column_dimensions[key].width = copy(value.width)
+    # Copy column dimensions
+    # for cn, source_col in source_sheet.column_dimensions.items():
+    #     target_sheet.column_dimensions[cn] = copy(source_col)
+    # Copy merged cells
+    for merged_range in source_sheet.merged_cells.ranges:
+        target_sheet.merge_cells(str(merged_range))
+    target_sheet.protection = copy(source_sheet.protection)
 
 
 def get_files(supplier_info, sheet_indexes, doc_type):
@@ -380,11 +512,11 @@ def get_files(supplier_info, sheet_indexes, doc_type):
     return dfs_dict, worksheets_dict
 
 
-doc_type1, doc_type2 = st.session_state.doc_types
 st.write("# RFP Files Consolidator")
 if (
     "suppliers" not in st.session_state
-    or st.session_state.template_files[doc_type2] is None
+    or len(st.session_state.suppliers) == 0
+    or "doc_types" not in st.session_state
 ):
     st.error("No supplier data found. Please complete the setup first.")
     st.stop()
@@ -395,7 +527,7 @@ event_name = st.session_state.event_name
 event_option = st.session_state.event_option
 # logo path
 st.session_state.logo_path = r"kellanova_logo.png"
-
+doc_type1, doc_type2 = st.session_state.doc_types
 
 ### Pricing Sheets Consolidation
 
@@ -413,6 +545,7 @@ chosen_sheets_pri_idx = [all_sheets_pri.index(sheet) for sheet in pricing_sheets
 if "pri_comb_mode" not in st.session_state:
     st.session_state.pri_comb_mode = "Side by Side"
 
+
 st.radio(
     "Please select consolidation method:",
     ("Side by Side", "Separate Sheets"),
@@ -426,7 +559,7 @@ if st.button("Consolidate", key="consolidate_pri"):
     consolidated_pri = openpyxl.Workbook()
     consolidated_pri.remove(consolidated_pri.active)
     dfs_pri_dict, sheets_pri_dict = get_files(
-        st.session_state.suppliers, chosen_sheets_pri_idx, doc_type2
+        st.session_state.suppliers, chosen_sheets_pri_idx, doc_type1
     )
     template_sheets_pri = [wb_template_pri[sheet] for sheet in pricing_sheets_list]
     with st.spinner("Processing... Please wait."):
@@ -485,6 +618,11 @@ st.radio(
     key="ques_comb_mode",
 )
 
+
+# add a summary option tickbox
+summary_option = st.checkbox("Questionnaire summary included", value=False)
+
+
 st.write(f"### Current Mode: **{st.session_state.ques_comb_mode}**")
 
 if st.button("Consolidate", key="consolidate_ques"):
@@ -499,7 +637,10 @@ if st.button("Consolidate", key="consolidate_ques"):
     with st.spinner("Processing... Please wait."):
         if st.session_state.ques_comb_mode == "Side by Side":
             consolidated_ques = side_by_side_combine(
-                consolidated_ques, template_sheets_ques, sheets_ques_dict
+                consolidated_ques,
+                template_sheets_ques,
+                sheets_ques_dict,
+                summary_option=summary_option,
             )
         elif st.session_state.ques_comb_mode == "Separate Sheets":
             consolidated_ques = separate_sheet_combine(

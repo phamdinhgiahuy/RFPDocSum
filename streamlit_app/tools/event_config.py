@@ -1,5 +1,27 @@
 import streamlit as st
 
+
+# Cache the function for managing suppliers' information
+@st.cache_data
+def update_supplier_list(num_suppliers, existing_suppliers, doc_type1, doc_type2):
+    if len(existing_suppliers) < num_suppliers:
+        existing_suppliers.extend(
+            [{"name": None, doc_type1: None, doc_type2: None}]
+            * (num_suppliers - len(existing_suppliers))
+        )
+    else:
+        existing_suppliers = existing_suppliers[:num_suppliers]
+    return existing_suppliers
+
+
+# Cache the function to process the template file upload
+@st.cache_data
+def process_uploaded_file(uploaded_file, doc_type1, doc_type2):
+    if uploaded_file is not None:
+        return {doc_type1: uploaded_file, doc_type2: uploaded_file}
+    return None
+
+
 st.write("# RFP Event Configuration")
 
 # Initialize or retrieve the event name
@@ -25,7 +47,6 @@ event_option = st.radio(
     index=(0 if st.session_state.event_option == "In a Single File" else 1),
 )
 st.session_state.event_option = event_option
-
 
 # Template Files
 if "template_files" not in st.session_state:
@@ -58,18 +79,12 @@ num_suppliers = st.number_input(
     value=max(1, len(st.session_state.suppliers)),
 )
 
+# Adjust supplier list size in state (cached)
+st.session_state.suppliers = update_supplier_list(
+    num_suppliers, st.session_state.suppliers, doc_type1, doc_type2
+)
 
-# Adjust supplier list size in state
-if len(st.session_state.suppliers) != num_suppliers:
-    if len(st.session_state.suppliers) < num_suppliers:
-        st.session_state.suppliers.extend(
-            [{"name": None, doc_type1: None, doc_type2: None}]
-            * (num_suppliers - len(st.session_state.suppliers))
-        )
-    else:
-        st.session_state.suppliers = st.session_state.suppliers[:num_suppliers]
-
-# Supplier details
+# Supplier details (cached)
 if event_option == "In a Single File":
     st.write(
         "Please upload the combined Pricing and Questionnaire documents for each supplier"
@@ -87,12 +102,13 @@ if event_option == "In a Single File":
                 f"Please upload combined template file for Supplier {i+1}",
                 key=f"combined_template_upload_{i}",
             )
-            if uploaded_file is not None:
-                st.session_state.suppliers[i][doc_type1] = uploaded_file
-                st.session_state.suppliers[i][doc_type2] = uploaded_file
+            file_info = process_uploaded_file(uploaded_file, doc_type1, doc_type2)
+            if file_info:
+                st.session_state.suppliers[i][doc_type1] = file_info[doc_type1]
+                st.session_state.suppliers[i][doc_type2] = file_info[doc_type2]
 else:
     for i in range(num_suppliers):
-        with st.expander(f"Supplier {i+1} Information", expanded=True):
+        with st.expander(f"Supplier {i+1} Information"):
             supplier_name = st.text_input(
                 f"Supplier {i+1} Name",
                 value=st.session_state.suppliers[i]["name"],
@@ -105,8 +121,9 @@ else:
                     f"Please upload {doc_type} template file for Supplier {i+1}",
                     key=f"{doc_type}_upload_{i}",
                 )
-                if uploaded_file is not None:
-                    st.session_state.suppliers[i][doc_type] = uploaded_file
+                file_info = process_uploaded_file(uploaded_file, doc_type1, doc_type2)
+                if file_info:
+                    st.session_state.suppliers[i][doc_type] = file_info[doc_type]
 
 # Debugging Info
 with st.expander("Debugging Info"):
