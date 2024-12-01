@@ -1,134 +1,121 @@
 import streamlit as st
 
-
-# Cache the function for managing suppliers' information
-@st.cache_data
-def update_supplier_list(num_suppliers, existing_suppliers, doc_type1, doc_type2):
-    if len(existing_suppliers) < num_suppliers:
-        existing_suppliers.extend(
-            [{"name": None, doc_type1: None, doc_type2: None}]
-            * (num_suppliers - len(existing_suppliers))
-        )
-    else:
-        existing_suppliers = existing_suppliers[:num_suppliers]
-    return existing_suppliers
-
-
-# Cache the function to process the template file upload
-@st.cache_data
-def process_uploaded_file(uploaded_file, doc_type1, doc_type2):
-    if uploaded_file is not None:
-        return {doc_type1: uploaded_file, doc_type2: uploaded_file}
-    return None
-
-
-st.write("# RFP Event Configuration")
-
-# Initialize or retrieve the event name
+# Set initial configuration if not already set
 if "event_name" not in st.session_state:
     st.session_state.event_name = ""
+if "event_option" not in st.session_state:
+    st.session_state.event_option = "In a Single File"
+if "suppliers" not in st.session_state:
+    st.session_state.suppliers = []
+if "template_files" not in st.session_state:
+    st.session_state.template_files = {"Pricing": None, "Questionnaire": None}
+if "doc_types" not in st.session_state or len(st.session_state.doc_types) == 0:
+    st.session_state.doc_types = ["Pricing", "Questionnaire"]
+
+# Configuration form
+st.write("# RFP Event Configuration")
+
+# Event name
 event_name = st.text_input("RFP Event Name", value=st.session_state.event_name)
 st.session_state.event_name = event_name
 
-# Initialize document types
-if "doc_types" not in st.session_state:
-    st.session_state.doc_types = ["Pricing", "Questionnaire"]
-doc_type1, doc_type2 = st.session_state.doc_types
-
-# Event Option
-if "event_option" not in st.session_state:
-    st.session_state.event_option = "In a Single File"
+# Event option: "In a Single File" or "In Separate Files"
 event_option = st.radio(
-    "Please select the Pricing and Questionnaire documents configuration for this event",
-    (
-        "In a Single File",
-        "In Separate Files",
-    ),
-    index=(0 if st.session_state.event_option == "In a Single File" else 1),
+    "Select the document configuration for this event",
+    ("In a Single File", "In Separate Files"),
+    index=0 if st.session_state.event_option == "In a Single File" else 1,
 )
-st.session_state.event_option = event_option
 
-# Template Files
-if "template_files" not in st.session_state:
-    st.session_state.template_files = {doc_type1: None, doc_type2: None}
 
-st.write("### Event Template Files")
+# Update session state when the event_option changes
+if event_option != st.session_state.event_option:
+    st.session_state.event_option = event_option
+
+# Upload template files
 if event_option == "In a Single File":
     combined_template = st.file_uploader(
-        "Please upload combined template file", key="combined_template"
+        "Upload Combined Template File", type=["xlsx", "xls"]
     )
-    if combined_template is not None:
-        st.session_state.template_files[doc_type1] = combined_template
-        st.session_state.template_files[doc_type2] = combined_template
+    if combined_template:
+        st.session_state.template_files["Pricing"] = combined_template
+        st.session_state.template_files["Questionnaire"] = combined_template
 else:
-    for doc_type in st.session_state.doc_types:
+    for doc_type in ["Pricing", "Questionnaire"]:
         uploaded_file = st.file_uploader(
-            f"Please upload {doc_type} template file", key=f"{doc_type}_template"
+            f"Upload {doc_type} Template File", type=["xlsx", "xls"]
         )
-        if uploaded_file is not None:
+        if uploaded_file:
             st.session_state.template_files[doc_type] = uploaded_file
 
-# Suppliers Information
-if "suppliers" not in st.session_state:
-    st.session_state.suppliers = []
+# Number of suppliers
+num_suppliers = st.number_input("Number of Suppliers", min_value=1, step=1)
+st.session_state.num_suppliers = num_suppliers
 
-num_suppliers = st.number_input(
-    "Number of Suppliers",
-    min_value=1,
-    step=1,
-    value=max(1, len(st.session_state.suppliers)),
-)
-
-# Adjust supplier list size in state (cached)
-st.session_state.suppliers = update_supplier_list(
-    num_suppliers, st.session_state.suppliers, doc_type1, doc_type2
-)
-
-# Supplier details (cached)
-if event_option == "In a Single File":
-    st.write(
-        "Please upload the combined Pricing and Questionnaire documents for each supplier"
+# Supplier details (ensure there is a supplier object for each supplier)
+if len(st.session_state.suppliers) < num_suppliers:
+    st.session_state.suppliers.extend(
+        [{"name": "", "Pricing": None, "Questionnaire": None}]
+        * (num_suppliers - len(st.session_state.suppliers))
     )
-    for i in range(num_suppliers):
-        with st.expander(f"Supplier {i+1} Information"):
-            supplier_name = st.text_input(
-                f"Supplier {i+1} Name",
-                value=st.session_state.suppliers[i]["name"],
-                key=f"name_{i}",
-            )
-            st.session_state.suppliers[i]["name"] = supplier_name
+elif len(st.session_state.suppliers) > num_suppliers:
+    st.session_state.suppliers = st.session_state.suppliers[:num_suppliers]
 
-            uploaded_file = st.file_uploader(
-                f"Please upload combined template file for Supplier {i+1}",
-                key=f"combined_template_upload_{i}",
-            )
-            file_info = process_uploaded_file(uploaded_file, doc_type1, doc_type2)
-            if file_info:
-                st.session_state.suppliers[i][doc_type1] = file_info[doc_type1]
-                st.session_state.suppliers[i][doc_type2] = file_info[doc_type2]
-else:
-    for i in range(num_suppliers):
-        with st.expander(f"Supplier {i+1} Information"):
-            supplier_name = st.text_input(
-                f"Supplier {i+1} Name",
-                value=st.session_state.suppliers[i]["name"],
-                key=f"name_{i}",
-            )
-            st.session_state.suppliers[i]["name"] = supplier_name
+# Add Supplier Info Form
+for i in range(num_suppliers):
+    with st.expander(f"Supplier {i + 1} Information"):
+        supplier_name = st.text_input(
+            f"Supplier {i + 1} Name", value=st.session_state.suppliers[i]["name"]
+        )
+        st.session_state.suppliers[i]["name"] = supplier_name
 
-            for doc_type in st.session_state.doc_types:
-                uploaded_file = st.file_uploader(
-                    f"Please upload {doc_type} template file for Supplier {i+1}",
-                    key=f"{doc_type}_upload_{i}",
-                )
-                file_info = process_uploaded_file(uploaded_file, doc_type1, doc_type2)
-                if file_info:
-                    st.session_state.suppliers[i][doc_type] = file_info[doc_type]
+        # Conditionally show file upload based on the event_option
+        if event_option == "In a Single File":
+            combined_file = st.file_uploader(
+                f"Upload Combined File for Supplier {i + 1}",
+                type=["xlsx", "xls"],
+                key=f"combined_{i}",
+            )
+            if combined_file:
+                st.session_state.suppliers[i]["Pricing"] = combined_file
+                st.session_state.suppliers[i]["Questionnaire"] = combined_file
+        else:
+            pricing_file = st.file_uploader(
+                f"Upload Pricing File for Supplier {i + 1}",
+                type=["xlsx", "xls"],
+                key=f"pricing_{i}",
+            )
+            if pricing_file:
+                st.session_state.suppliers[i]["Pricing"] = pricing_file
+            questionnaire_file = st.file_uploader(
+                f"Upload Questionnaire File for Supplier {i + 1}",
+                type=["xlsx", "xls"],
+                key=f"questionnaire_{i}",
+            )
+            if questionnaire_file:
+                st.session_state.suppliers[i]["Questionnaire"] = questionnaire_file
 
-# Debugging Info
-with st.expander("Debugging Info"):
-    st.write("Event Name:", event_name)
-    st.write("Number of Suppliers:", num_suppliers)
-    st.write("Template Files:", st.session_state.template_files)
-    st.write("Suppliers:", st.session_state.suppliers)
-    st.write("Event Option:", event_option)
+# Submit Button to update session state and allow routing to the next page
+# submit_disabled = getattr(st.session_state, "submitted", False)
+if st.button("Submit Configuration"):
+    st.session_state.submitted = True
+    st.success(
+        "Configuration updated successfully! Please proceed to the consolidation page."
+    )
+
+# Debugging Info - Show only after submission
+if getattr(st.session_state, "submitted", False):
+    with st.expander("Debugging Info"):
+        st.write("### Event Details")
+        st.write(f"- **Event Name**: {event_name}")
+        st.write(f"- **Number of Suppliers**: {st.session_state.num_suppliers}")
+        st.write("- **Template Files**:")
+        for doc_type, file in st.session_state.template_files.items():
+            st.write(f"  - {doc_type}: {file.name if file else 'Not Uploaded'}")
+        st.write("- **Suppliers Info**:")
+        for i, supplier in enumerate(st.session_state.suppliers):
+            st.write(f"  - Supplier {i+1}:")
+            st.write(f"    - Name: {supplier.get('name', 'Unnamed')}")
+            for doc_type in ["Pricing", "Questionnaire"]:
+                file = supplier.get(doc_type)
+                st.write(f"    - {doc_type}: {file.name if file else 'Not Uploaded'}")
+        st.write(f"- **Event Option**: {event_option}")
