@@ -797,7 +797,10 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
                 value = price_sheet[f"{col}{row}"].value
                 price_value = re.sub(r"[^\d.]", "", str(value))
                 if price_value:
-                    price_value = round(float(price_value), 2)
+                    try:
+                        price_value = round(float(price_value), 2)
+                    except ValueError:
+                        continue
                     summary_data.append(
                         {
                             "Category": category,
@@ -811,7 +814,11 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
                         value = price_sheet[f"{col}{row}"].value
                         price_value = re.sub(r"[^\d.]", "", str(value))
                         if price_value:
-                            total_price += float(price_value)
+                            try:
+                                price_value = float(price_value)
+                            except ValueError:
+                                continue
+                            total_price += price_value
                     if total_price > 0:
                         total_price = round(total_price, 2)
                         summary_data.append(
@@ -871,6 +878,22 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
     return 1
 
 
+# with st.expander("Debugging Info"):
+#     st.write("### Event Details")
+#     st.write(f"- **Event Name**: {st.session_state.event_name}")
+#     st.write(f"- **Number of Suppliers**: {st.session_state.num_suppliers}")
+#     st.write("- **Template Files**:")
+#     for doc_type, file in st.session_state.template_files.items():
+#         st.write(f"  - {doc_type}: {file.name if file else 'Not Uploaded'}")
+#     st.write("- **Suppliers Info**:")
+#     for i, supplier in enumerate(st.session_state.suppliers):
+#         st.write(f"  - Supplier {i+1}:")
+#         st.write(f"    - Name: {supplier.get('name', 'Unnamed')}")
+#         for doc_type in ["Pricing", "Questionnaire"]:
+#             file = supplier.get(doc_type)
+#             st.write(f"    - {doc_type}: {file.name if file else 'Not Uploaded'}")
+#     st.write(f"- **Event Option**: {st.session_state.event_option}")
+
 # Check if suppliers are set up
 if "suppliers" not in st.session_state or len(st.session_state.suppliers) == 0:
     st.error("No supplier data found. Please complete the setup first.")
@@ -879,6 +902,10 @@ if "suppliers" not in st.session_state or len(st.session_state.suppliers) == 0:
 # Check if document types are configured
 if "doc_types" not in st.session_state or len(st.session_state.doc_types) == 0:
     st.error("Document types not configured. Please complete the setup first.")
+    st.stop()
+
+if "event_name" not in st.session_state or "event_option" not in st.session_state:
+    st.error("Event name or option not configured. Please complete the setup first.")
     st.stop()
 
 # Check if each supplier has the necessary files and names

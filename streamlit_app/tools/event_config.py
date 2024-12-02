@@ -1,28 +1,32 @@
 import streamlit as st
 
-# Set initial configuration if not already set
-if "event_name" not in st.session_state:
-    st.session_state.event_name = ""
-if "event_option" not in st.session_state:
-    st.session_state.event_option = "In a Single File"
-if "suppliers" not in st.session_state:
-    st.session_state.suppliers = []
-if "template_files" not in st.session_state:
-    st.session_state.template_files = {"Pricing": None, "Questionnaire": None}
-if "doc_types" not in st.session_state or len(st.session_state.doc_types) == 0:
-    st.session_state.doc_types = ["Pricing", "Questionnaire"]
 
+# Set initial configuration if not already set
+def initialize_session_state():
+    if "event_name" not in st.session_state:
+        st.session_state.event_name = ""
+    if "event_option" not in st.session_state:
+        st.session_state.event_option = "In a Single File"
+    if "suppliers" not in st.session_state:
+        st.session_state.suppliers = []
+    if "template_files" not in st.session_state:
+        st.session_state.template_files = {"Pricing": None, "Questionnaire": None}
+    if "doc_types" not in st.session_state or len(st.session_state.doc_types) == 0:
+        st.session_state.doc_types = ["Pricing", "Questionnaire"]
+
+
+initialize_session_state()
 # Configuration form
 st.write("# RFP Event Configuration")
 
 # Event name
-st.text_input(
+event_name = st.text_input(
     "RFP Event Name",
     value=st.session_state.event_name,
-    key="event_name",
     placeholder="This name will appear in the filename for the consolidated document.",
 )
-# st.session_state.event_name = event_name
+
+st.session_state.event_name = event_name
 
 # Event option: "In a Single File" or "In Separate Files"
 event_option = st.radio(
@@ -127,7 +131,7 @@ if st.button("Submit Configuration"):
         "Configuration updated successfully! Please proceed to the consolidation page."
     )
 
-# Debugging Info - Show only after submission
+# # Debugging Info - Show only after submission
 # if getattr(st.session_state, "submitted", False):
 #     with st.expander("Debugging Info"):
 #         st.write("### Event Details")
