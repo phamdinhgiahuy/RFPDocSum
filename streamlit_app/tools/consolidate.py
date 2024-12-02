@@ -20,6 +20,7 @@ from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
 from itertools import cycle
 from collections import deque
 from openpyxl.cell import Cell
+from openpyxl.chart import BarChart, Reference
 
 # from openpyxl.cell.rich_text import RichText
 
@@ -83,7 +84,7 @@ def merge_columns_in_target_sheet(
 
 
 # Function to find common columns by comparing values
-def find_matching_cols(template_sheet, supplier_sheet, threshold=90):
+def find_matching_cols(template_sheet, supplier_sheet, threshold=80):
     common_columns = []
     supplier_value_columns = []
     mis_mat_rows = []
@@ -112,7 +113,7 @@ def find_matching_cols(template_sheet, supplier_sheet, threshold=90):
 
         if similarity > threshold:
             common_columns.append(col_letter)
-            if similarity < 100:
+            if similarity < 99:
                 # Highlight the row in the supplier sheet that does not match the template
                 for row_sup in supplier_sheet.iter_rows(
                     min_col=col[0].column, max_col=col[0].column
@@ -121,6 +122,9 @@ def find_matching_cols(template_sheet, supplier_sheet, threshold=90):
                         # Compare the pure text without formatting
                         cell_value = str(row_sup[0].value)
                         if cell_value not in row_values_template:
+                            print(
+                                f"Detected mismatch in row: {row_sup[0].coordinate} the value is: {cell_value}"
+                            )
                             # Detected mismatch in row, add coordinates of the mismatched row
                             mis_mat_rows.append(row_sup[0].coordinate)
         else:
@@ -137,13 +141,13 @@ def separate_sheet_combine(
     st.toast(f"Combining files in progress...", icon="⏳")
     for idx, template_sheet in enumerate(template_sheets):
         # copy the template sheet to the workbook
-        target_sheet = workbook.create_sheet(template_sheet.title)
+        target_sheet = workbook.create_sheet(f"{template_sheet.title}"[:30])
         copy_sheet(template_sheet, target_sheet)
         for supplier in supplier_sheets_dict:
             print(f"Processing supplier: {supplier}")
             # add a new sheet for each supplier
             supplier_sheet = supplier_sheets_dict[supplier][idx]
-            sheet_title = f"{supplier}_{template_sheet.title}"[:30]
+            sheet_title = f"{supplier} {template_sheet.title}"[:30]
             target_sheet = workbook.create_sheet(sheet_title)
             copy_sheet(supplier_sheet, target_sheet)
             _, mis_mat_rows, _ = find_matching_cols(
@@ -165,12 +169,12 @@ def separate_sheet_combine(
                                 fill_type="solid",
                             )
                         )
-                        print(
-                            f"Filled cell: {col_mis} and {row_mis} in sheet: {sheet_title}"
-                        )
-                    print(
-                        f"Detected mismatched row: {mis_mat_row}. Highlighting cell: {col_mis} and {row_mis}"
-                    )
+                        # print(
+                        #     f"Filled cell: {col_mis} and {row_mis} in sheet: {sheet_title}"
+                        # )
+                    # print(
+                    #     f"Detected mismatched row: {mis_mat_row}. Highlighting cell: {col_mis} and {row_mis}"
+                    # )
     # remove the default sheet
     if "Sheet" in workbook.sheetnames:
         workbook.remove(workbook["Sheet"])
@@ -215,7 +219,13 @@ def side_by_side_combine(
         print(f"Processing template sheet: {template_sheet.title}")
 
         # Create a new sheet in the workbook for each template sheet
-        target_sheet = workbook.create_sheet(template_sheet.title)
+        target_sheet_template = workbook.create_sheet(
+            f"{template_sheet.title} Template"[:30]
+        )
+        copy_sheet(template_sheet, target_sheet_template)
+
+        # Create a new sheet in the workbook for side-by-side comparison
+        target_sheet = workbook.create_sheet(f"Combined {template_sheet.title}"[:30])
 
         # Initialize variables to store column data and mismatched rows
         common_columns = []
@@ -236,10 +246,10 @@ def side_by_side_combine(
             )
 
             # Debug: Print matched and mismatched columns
-            print(f"Supplier: {supplier}")
-            print(f"  Common Columns: {com_columns}")
-            print(f"  Mismatched Rows: {mis_mat_rows}")
-            print(f"  Supplier Value Columns: {supplier_value_columns}")
+            # print(f"Supplier: {supplier}")
+            # print(f"  Common Columns: {com_columns}")
+            # print(f"  Mismatched Rows: {mis_mat_rows}")
+            # print(f"  Supplier Value Columns: {supplier_value_columns}")
 
             # Add matching columns to the final list (ensure no duplicates)
             common_columns.extend(
@@ -254,8 +264,8 @@ def side_by_side_combine(
             supplier_value_columns_dict[supplier] = supplier_value_columns
 
         # Copy common columns from template to target sheet
-        print(f"Template Common Columns: {common_columns}")
-        print(f"Supplier Value Columns: {supplier_value_columns_dict}")
+        # print(f"Template Common Columns: {common_columns}")
+        # print(f"Supplier Value Columns: {supplier_value_columns_dict}")
         queue = create_insertion_queue(common_columns, supplier_value_columns_dict)
         if not queue:
             print("No columns to process for this template sheet.")
@@ -279,9 +289,9 @@ def side_by_side_combine(
             col_idx_target = i + 1  # Insert in the order of the queue
 
             # Copy column
-            print(
-                f"Copying column {col_letter} from {source} to target at index {col_idx_target}"
-            )
+            # print(
+            #     f"Copying column {col_letter} from {source} to target at index {col_idx_target}"
+            # )
             end_row_write = copy_column(
                 source_sheet, target_sheet, col_idx_source, col_idx_target
             )
@@ -311,11 +321,6 @@ def side_by_side_combine(
                     max_col=col_idx_target,
                 ):
                     for cell in row:
-                        # if cell.value is None or cell.value == "":
-                        #     empty_rows += 1
-                        # if empty_rows > 20:
-                        #     print("Too many empty rows")
-                        #     break
                         cell.fill = PatternFill(
                             fill_type="solid", start_color=header_fill_color
                         )
@@ -422,9 +427,9 @@ def append_logo(workbook, image_path, image_scale=0.8):
 
 
 def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
-    print(
-        f"Copying column {source_col_idx} from {source_sheet.title} to {target_col_idx} in {target_sheet.title}"
-    )
+    # print(
+    #     f"Copying column {source_col_idx} from {source_sheet.title} to {target_col_idx} in {target_sheet.title}"
+    # )
     source_col_letter = get_column_letter(source_col_idx)
     target_col_letter = get_column_letter(target_col_idx)
 
@@ -442,13 +447,13 @@ def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
             None,
             "",
         ):  # If a non-empty cell is found, exit early
-            print(f"Non-empty cell detected at row {row}.")
+            # print(f"Non-empty cell detected at row {row}.")
             break
         check_empty += 1
 
     # If all rows are empty, exit the function
     if check_empty == max_rows_to_check:
-        print("All checked rows are empty. Exiting the function.")
+        # print("All checked rows are empty. Exiting the function.")
         return end_row_idx
     target_row = 1
     merged_dict = generate_merged_dict(source_sheet)
@@ -475,7 +480,11 @@ def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
         else:
             hidden_count = 0
         # if found more than 30 continuous empty rows, break the loop
-
+        # if found "=" in source_cell.value print the cell value
+        if "=" in str(source_cell.value):
+            print(
+                f"Found formula in cell {source_cell.coordinate}: {source_cell.value}"
+            )
         target_cell.value = source_cell.value
         target_cell.data_type = source_cell.data_type
 
@@ -485,7 +494,7 @@ def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
                 target_cell.border = copy(source_cell.border)
                 target_cell.fill = copy(source_cell.fill)
                 target_cell.number_format = copy(source_cell.number_format)
-                target_cell.protection = copy(source_cell.protection)
+                # target_cell.protection = copy(source_cell.protection)
                 target_cell.alignment = copy(source_cell.alignment)
         except Exception as e:
             print(f"Error copying styles for cell {source_cell.coordinate}: {e}")
@@ -609,6 +618,137 @@ def get_files(supplier_info, sheet_indexes, doc_type):
     return dfs_dict, worksheets_dict
 
 
+def write_summary_to_sheet(summary_df, grand_total_df, summary_sheet):
+    if not summary_df.empty:
+        # Pivot the summary DataFrame
+        merged_df = summary_df.pivot_table(
+            index=["Category", "Subcategory"],
+            values=[
+                col
+                for col in summary_df.columns
+                if col not in ["Category", "Subcategory"]
+            ],
+            aggfunc="first",
+        ).reset_index()
+
+        # Write merged_df to the sheet
+        for r in dataframe_to_rows(merged_df, index=False, header=True):
+            summary_sheet.append(r)
+
+        # Separate `merged_df` and `grand_total_df` visually in the sheet
+        summary_sheet.append([])
+        summary_sheet.append(
+            ["Grand Total Summary"]
+        )  # Add a title row for grand_total_df
+
+        # Write grand_total_df to the sheet
+        for r in dataframe_to_rows(grand_total_df, index=False, header=True):
+            summary_sheet.append(r)
+
+        # Merge cells with the same value in column A (Category column)
+        current_value = None
+        start_row = None
+        for row in range(2, summary_sheet.max_row + 1):  # Skip header row
+            cell_value = summary_sheet.cell(row=row, column=1).value
+            if cell_value != current_value:
+                if start_row and current_value is not None:
+                    summary_sheet.merge_cells(
+                        start_row=start_row,
+                        start_column=1,
+                        end_row=row - 1,
+                        end_column=1,
+                    )
+                current_value = cell_value
+                start_row = row
+        if start_row and current_value is not None:
+            summary_sheet.merge_cells(
+                start_row=start_row,
+                start_column=1,
+                end_row=summary_sheet.max_row,
+                end_column=1,
+            )
+
+        # Format the sheet
+        header_fill = PatternFill(
+            start_color="4472C4", end_color="4472C4", fill_type="solid"
+        )
+        font_style_header = Font(b=True, color="FFFFFF")
+        border_style = Side(border_style="thin", color="000000")
+
+        # Apply borders and styles to all cells
+        grand_total_row = 1
+        for row in summary_sheet.iter_rows(
+            min_row=1,
+            max_row=summary_sheet.max_row,
+            min_col=1,
+            max_col=summary_sheet.max_column,
+        ):
+            for cell in row:
+                cell.border = Border(
+                    left=border_style,
+                    right=border_style,
+                    top=border_style,
+                    bottom=border_style,
+                )
+                if cell.row == 1:
+                    cell.fill = header_fill
+                    cell.font = font_style_header
+                elif cell.value == "Grand Total Summary":
+                    # fill the cell with a different color
+                    cell.fill = PatternFill(
+                        start_color="FF0000", end_color="FF0000", fill_type="solid"
+                    )
+                    cell.font = font_style_header
+                    grand_total_row = cell.row
+
+        # Set the column width to auto based on the content
+        for col in range(1, summary_sheet.max_column + 1):
+            column = get_column_letter(col)
+            max_length = max(
+                len(str(summary_sheet.cell(row=row, column=col).value) or "")
+                for row in range(1, summary_sheet.max_row + 1)
+            )
+            summary_sheet.column_dimensions[column].width = max_length + 2
+        # plot bar chart of the grand total summary
+        chart = BarChart()
+        chart.type = "col"  # Column chart
+        # chart.style = 2
+        # second style
+
+        # chart.legend =
+        chart.grouping = "clustered"  # Set grouping to clustered
+        chart.title = "Supplier Price Comparison by Category"
+        chart.x_axis.title = "Category"
+        chart.y_axis.title = "Price"
+
+        data = Reference(
+            summary_sheet,
+            min_col=2,
+            min_row=grand_total_row + 1,
+            max_row=summary_sheet.max_row,
+            max_col=summary_sheet.max_column - 1,
+        )
+        categories = Reference(
+            summary_sheet,
+            min_col=1,
+            min_row=grand_total_row + 2,
+            max_row=summary_sheet.max_row,
+        )
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(categories)
+        summary_sheet.add_chart(chart, "A" + str(summary_sheet.max_row + 2))
+        # display the category in the x-axis
+
+        # Add a title for the chart
+        summary_sheet.cell(
+            row=summary_sheet.max_row + 4,
+            column=1,
+            value="Supplier Price Comparison by Category",
+        )
+    else:
+        print("The summary_df is empty; ensure your input data is correct.")
+
+
 def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
     # Extract headers and map columns to suppliers
     headers_dict = {}
@@ -649,13 +789,38 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
             if len(col_headers) < 2:
                 continue
             category = col_headers[1][0]
+            upper_row = headers_dict[price_label_col][0][1]
+            lower_row = headers_dict[price_label_col][0][1]
             for cate, row in headers_dict[price_label_col]:
+                if row > lower_row:
+                    lower_row = row
                 value = price_sheet[f"{col}{row}"].value
                 price_value = re.sub(r"[^\d.]", "", str(value))
                 if price_value:
+                    price_value = round(float(price_value), 2)
                     summary_data.append(
-                        {"Category": category, "Subcategory": cate, supplier: value}
+                        {
+                            "Category": category,
+                            "Subcategory": cate,
+                            supplier: price_value,
+                        }
                     )
+                else:
+                    total_price = 0
+                    for row in range(upper_row, lower_row + 1):
+                        value = price_sheet[f"{col}{row}"].value
+                        price_value = re.sub(r"[^\d.]", "", str(value))
+                        if price_value:
+                            total_price += float(price_value)
+                    if total_price > 0:
+                        total_price = round(total_price, 2)
+                        summary_data.append(
+                            {
+                                "Category": category,
+                                "Subcategory": cate,
+                                supplier: total_price,
+                            }
+                        )
 
     # Convert summary data into DataFrame
     summary_df = pd.DataFrame(summary_data)
@@ -678,130 +843,34 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
         if not existing_suppliers:
             print("No valid suppliers found in the DataFrame columns.")
             return summary_sheet
-
-        # Filter merged_df with the existing suppliers
         try:
-            merged_df_filtered = merged_df.loc[:, existing_suppliers]
-            # create a new df to store the max value of the three suppliers
-            max_rows = (
-                merged_df_filtered.max(axis=1).groupby(merged_df["Category"]).idxmax()
-            )
-            max_df = merged_df.loc[max_rows].reset_index(drop=True)
-            print(merged_df)
+            grand_total_rows = merged_df[
+                merged_df["Subcategory"].str.contains(
+                    "grand total", case=False, na=False
+                )
+            ].index
+
+            if grand_total_rows.size > 0:
+                # Extract the rows containing 'Grand Total'
+                grand_total_df = merged_df.loc[grand_total_rows]
+                # drop the 'Subcategory' column
+                grand_total_df = grand_total_df.drop(columns=["Subcategory"])
+            else:
+                # Aggregate the data to compute the grand total
+                numeric_columns = merged_df.select_dtypes(include="number").columns
+                grand_total_df = (
+                    merged_df.groupby("Category")[numeric_columns].sum().reset_index()
+                )
         except Exception as e:
-            print(f"Error filtering DataFrame: {e}")
+            print(f"Error Creating Summary Table: {e}")
             return 0
     else:
         print("The summary_df is empty; ensure your input data is correct.")
         return 0
-
-    # Write the dataframe to the sheet
-    for r in dataframe_to_rows(merged_df, index=False, header=True):
-        summary_sheet.append(r)
-
-    # Merge cells with the same value in column A
-    current_value = None
-    start_row = None
-    for row in range(2, summary_sheet.max_row + 1):  # Skip header row
-        cell_value = summary_sheet.cell(row=row, column=1).value
-        if cell_value != current_value:
-            if start_row and current_value is not None:
-                summary_sheet.merge_cells(
-                    start_row=start_row, start_column=1, end_row=row - 1, end_column=1
-                )
-            current_value = cell_value
-            start_row = row
-    if start_row and current_value is not None:
-        summary_sheet.merge_cells(
-            start_row=start_row,
-            start_column=1,
-            end_row=summary_sheet.max_row,
-            end_column=1,
-        )
-
-    # Format the sheet
-    header_fill = PatternFill(
-        start_color="4472C4", end_color="4472C4", fill_type="solid"
-    )
-    font_style_header = Font(b=True, color="FFFFFF")
-    border_style = Side(border_style="thin", color="000000")
-
-    # Apply borders and styles to all cells
-    for row in summary_sheet.iter_rows(
-        min_row=1,
-        max_row=summary_sheet.max_row,
-        min_col=1,
-        max_col=summary_sheet.max_column,
-    ):
-        for cell in row:
-            cell.border = Border(
-                left=border_style,
-                right=border_style,
-                top=border_style,
-                bottom=border_style,
-            )
-            if cell.row == 1:
-                cell.fill = header_fill
-                cell.font = font_style_header
-
-    # Set the column width to auto based on the content
-    for col in range(1, summary_sheet.max_column + 1):
-        column = get_column_letter(col)
-        max_length = max(
-            len(str(summary_sheet.cell(row=row, column=col).value) or "")
-            for row in range(1, summary_sheet.max_row + 1)
-        )
-        summary_sheet.column_dimensions[column].width = max_length + 2
-    if not summary_df.empty and not max_df.empty:
-        print(max_df)
-        # start_row = summary_sheet.max_row + 5
-        # chart_data_start_row = start_row + 1
-
-        # Write chart data header
-        chart_headers = ["Category"] + list(merged_df.columns[2:])  # Supplier names
-        summary_sheet.append(chart_headers)
-
-        # Write chart data (categories and corresponding supplier prices)
-        for index, row in max_df.iterrows():
-            row_data = [row["Category"]] + list(
-                row.iloc[2:]
-            )  # Include only relevant columns
-            summary_sheet.append(row_data)
-
-        # # Create a bar chart
-        # chart = BarChart()
-        # chart.type = "col"  # Column chart
-        # chart.style = 13
-        # chart.grouping = "clustered"  # Set grouping to clustered
-        # chart.title = "Supplier Price Comparison by Category"
-        # chart.x_axis.title = "Category"
-        # chart.y_axis.title = "Price"
-
-        # # Define data range for chart
-        # data = Reference(
-        #     summary_sheet,
-        #     min_row=chart_data_start_row,
-        #     max_row=summary_sheet.max_row,
-        #     min_col=2,  # Supplier data starts from the second column
-        #     max_col=1 + len(agg_dict),  # Number of suppliers
-        # )
-        # categories = Reference(
-        #     summary_sheet,
-        #     min_row=chart_data_start_row,
-        #     max_row=summary_sheet.max_row,
-        #     min_col=1,  # Category column
-        # )
-
-        # # Add data and categories to chart
-        # chart.add_data(data, titles_from_data=True)
-        # chart.set_categories(categories)
-
-        # # Position the chart below the data
-        # summary_sheet.add_chart(chart, f"A{summary_sheet.max_row + 2}")
+    write_summary_to_sheet(merged_df, grand_total_df, summary_sheet)
     return 1
 
 
-st.write("# RFP Files Consolidator")
 # Check if suppliers are set up
 if "suppliers" not in st.session_state or len(st.session_state.suppliers) == 0:
     st.error("No supplier data found. Please complete the setup first.")
@@ -832,9 +901,31 @@ event_option = st.session_state.event_option
 st.session_state.logo_path = r"kellanova_logo.png"
 doc_type1, doc_type2 = st.session_state.doc_types
 
+
+st.write("# RFP Files Consolidator")
+suppliers_html = ""
+color_cycle = fill_color_switch()
+
+for i, supplier in enumerate(st.session_state.suppliers):
+    supplier_name = supplier["name"]
+    supplier_color = next(color_cycle)
+
+    suppliers_html += f'<span style="font-weight: bold; color: #{supplier_color}; margin-right: 10px;">{supplier_name}</span>'
+
+# Render the formatted text with bold event and option names
+st.markdown(
+    f"""
+    <div>
+        <p style="font-style: italic;">Current Event: <span style="font-weight: bold;">{st.session_state.event_name}</span></p>
+        <p style="font-style: italic;">Document Configuration: <span style="font-weight: bold;">{st.session_state.event_option}</span></p>
+        <p style="font-style: italic;">Participants: {suppliers_html}</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 ### Pricing Sheets Consolidation
 
-st.write("### Pricing information")
+st.markdown("### :green[For **Pricing**]")
 template_pri = st.session_state.template_files[doc_type1]
 wb_template_pri = load_workbook(template_pri, rich_text=True, data_only=True)
 all_sheets_pri = wb_template_pri.sheetnames
@@ -856,7 +947,7 @@ st.radio(
     key="pri_comb_mode",
 )
 
-st.write(f"### Current Mode: **{st.session_state.pri_comb_mode}**")
+# st.write(f"### Current Mode: **{st.session_state.pri_comb_mode}**")
 
 if st.button("Consolidate", key="consolidate_pri"):
     consolidated_pri = openpyxl.Workbook()
@@ -874,7 +965,7 @@ if st.button("Consolidate", key="consolidate_pri"):
             # iterate over the sheets in consolidated_pri and create a summary sheet
             for sheet in consolidated_pri.worksheets:
                 # Skip template or non-price sheets if needed
-                if sheet.title in pricing_sheets_list:
+                if "Combined" in sheet.title:
                     # Create a new summary sheet
                     summary_sheet = consolidated_pri.create_sheet(
                         title=f"Summary of {sheet.title}"[:30]
@@ -916,7 +1007,7 @@ else:
 
 ### Questionnaire Sheets Consolidation
 
-st.write("### Questionnaire information")
+st.markdown("#### :orange[For **Questionnaire**]")
 template_ques = st.session_state.template_files[doc_type2]
 wb_template_ques = load_workbook(template_ques, rich_text=True, data_only=True)
 all_sheets_ques = wb_template_ques.sheetnames
@@ -943,10 +1034,19 @@ st.radio(
 
 
 # add a summary option tickbox
-summary_option = st.checkbox("Questionnaire summary included", value=False)
+summary_option = st.checkbox(
+    "Questionnaire summary included",
+    value=False,
+    key="summary_option",
+    help="Include a summary of the supplier responses at the end of each column.",
+)
 
+# st.write(
+#     "ℹ️ The summary option will provide a brief summary of the data in each column."
+# )
+# st.write(st.session_state.summary_option)
 
-st.write(f"### Current Mode: **{st.session_state.ques_comb_mode}**")
+# st.write(f"### Current Mode: **{st.session_state.ques_comb_mode}**")
 
 if st.button("Consolidate", key="consolidate_ques"):
     consolidated_ques = openpyxl.Workbook()
@@ -963,7 +1063,7 @@ if st.button("Consolidate", key="consolidate_ques"):
                 consolidated_ques,
                 template_sheets_ques,
                 sheets_ques_dict,
-                summary_option=summary_option,
+                summary_option=st.session_state.summary_option,
             )
         elif st.session_state.ques_comb_mode == "Separate Sheets":
             consolidated_ques = separate_sheet_combine(
