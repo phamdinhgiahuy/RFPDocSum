@@ -3,21 +3,26 @@ import streamlit as st
 
 # Main page with guiding info (help section)
 def main_page():
+    st.image(r"assets/kellanova_logo.png", width=200)
     st.title("Welcome to the Automated RFP Tool")
 
     st.markdown("#### :red[Where to start?]")
 
-    st.write(
+    st.markdown(
         """
         This application provides the following tools:
-        1. **RFP Config:** Configure RFP event-related settings for the consolidation file.
-        2. **Consolidate:** Aggregate and analyze RFP responses from multiple vendors.
+
+        1. **RFP Config:** 
+        Configure RFP event-related settings for the consolidation file.
+        2. **Consolidate:** 
+        Aggregate and analyze RFP responses from multiple suppliers either side-by-side or in separate sheets.
         
-        👈 Use the navigation menu on the left to select a tool.
-        Expand the help section for a more detailed guide.
+        👈 Use the *navigation menu* on the left to select a tool.
+        
+        Expand the ℹ️ section below for a more detailed guide.
         """
     )
-    with st.expander("See Full Guide"):
+    with st.expander("ℹ️ See Full Guide"):
         st.markdown(
             """
             ### Step 1: Choose File Configuration

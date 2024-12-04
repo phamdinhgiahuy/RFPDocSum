@@ -6,6 +6,8 @@ from openpyxl import load_workbook
 import openpyxl
 from copy import copy
 import io
+from openpyxl.cell.rich_text import TextBlock, CellRichText
+from openpyxl.cell.text import InlineFont
 from openpyxl.drawing.image import Image
 from openpyxl.styles import PatternFill, Border, Side, Alignment, Protection, Font
 from difflib import SequenceMatcher
@@ -67,7 +69,7 @@ def merge_columns_in_target_sheet(
     target_sheet, merged_dict, source_col_idx, target_col_idx
 ):
     if source_col_idx not in merged_dict:
-        print(f"No merged ranges found for column {source_col_idx} in merged_dict.")
+        # print(f"No merged ranges found for column {source_col_idx} in merged_dict.")
         return
     for merged_range in merged_dict[source_col_idx]:
         # Extract the start and end rows from the merged range (e.g., 'C14:C17' -> 14, 17)
@@ -89,44 +91,72 @@ def find_matching_cols(template_sheet, supplier_sheet, threshold=80):
     supplier_value_columns = []
     mis_mat_rows = []
 
-    for col in template_sheet.iter_cols():
+    for col in template_sheet.iter_cols(max_col=min(template_sheet.max_column, 100)):
         # Get the column letter of the current column
         col_letter = get_column_letter(col[0].column)
-        row_values_template = [cell.value for cell in col if cell.value is not None]
-
+        # row_values_template = [cell.value for cell in col if cell.value is not None]
+        row_values_template = []
+        for cell in col:
+            row_value = cell.value
+            if row_value is not None:
+                # row_values_template.append(row.value)
+                # if instance of rich text, convert to string
+                if isinstance(row_value, CellRichText):
+                    row_values_template.append(" ".join(row_value.as_list()))
+                else:
+                    row_values_template.append(str(row_value))
         row_values_suppliers = []
         for row_sup in supplier_sheet.iter_rows(
-            min_col=col[0].column, max_col=col[0].column
+            min_col=col[0].column,
+            max_col=col[0].column,
+            max_row=min(supplier_sheet.max_row, 300),
         ):
-            # Get non-None values in the current column of the supplier sheet
-            if row_sup[0].value is not None:
-                row_values_suppliers.append(row_sup[0].value)
-
+            for cell in row_sup:
+                if cell.value is not None:
+                    # row_values_suppliers.append(cell.value)
+                    # if instance of rich text, convert to string
+                    if isinstance(cell.value, CellRichText):
+                        row_values_suppliers.append(" ".join(cell.value.as_list()))
+                    else:
+                        row_values_suppliers.append(str(cell.value))
         # If both lists are empty, skip the column
         if not row_values_template and not row_values_suppliers:
             continue
 
         # Fuzzy matching between the string joint from the template and the supplier list
-        temp_row_str = " ".join([str(val) for val in row_values_template])
-        suppliers_row_str = " ".join([str(val) for val in row_values_suppliers])
+
+        temp_row_str = " ".join(row_values_template)
+        suppliers_row_str = " ".join(row_values_suppliers)
         similarity = fuzz.ratio(temp_row_str, suppliers_row_str)
+        # print(f"Column: {col_letter}, Similarity: {similarity}, Threshold: {threshold}")
+        # print row_values_template and row_values_suppliers
 
         if similarity > threshold:
             common_columns.append(col_letter)
-            if similarity < 99:
+            if similarity < 100:
                 # Highlight the row in the supplier sheet that does not match the template
+                # print(f"Row values from template: {row_values_template}")
+                # print(f"Row values from supplier: {row_values_suppliers}")
                 for row_sup in supplier_sheet.iter_rows(
-                    min_col=col[0].column, max_col=col[0].column
+                    min_col=col[0].column,
+                    max_col=col[0].column,
+                    max_row=min(supplier_sheet.max_row, 300),
                 ):
-                    if row_sup[0].value is not None:
-                        # Compare the pure text without formatting
-                        cell_value = str(row_sup[0].value)
-                        if cell_value not in row_values_template:
-                            print(
-                                f"Detected mismatch in row: {row_sup[0].coordinate} the value is: {cell_value}"
-                            )
-                            # Detected mismatch in row, add coordinates of the mismatched row
-                            mis_mat_rows.append(row_sup[0].coordinate)
+                    for cell in row_sup:
+                        cell_val, cell_coord = cell.value, cell.coordinate
+                        if cell_val is not None:
+                            # check if the cell is rich text
+                            if isinstance(cell_val, CellRichText):
+                                cell_val = " ".join(cell_val.as_list())
+                            else:
+                                cell_val = str(cell_val)
+                            if cell_val not in row_values_template:
+                                print(
+                                    f"Detected mismatch in row: {cell_coord} for supplier {supplier_sheet.title}. the value is: {cell_val}, the type is: {type(cell_val)}"
+                                )
+                                mis_mat_rows.append(cell_coord)
+                                # Detected mismatch in row, add coordinates of the mismatched row
+
         else:
             # This column is not common, can be the column that contains the supplier values
             if row_values_suppliers:
@@ -169,12 +199,6 @@ def separate_sheet_combine(
                                 fill_type="solid",
                             )
                         )
-                        # print(
-                        #     f"Filled cell: {col_mis} and {row_mis} in sheet: {sheet_title}"
-                        # )
-                    # print(
-                    #     f"Detected mismatched row: {mis_mat_row}. Highlighting cell: {col_mis} and {row_mis}"
-                    # )
     # remove the default sheet
     if "Sheet" in workbook.sheetnames:
         workbook.remove(workbook["Sheet"])
@@ -264,8 +288,6 @@ def side_by_side_combine(
             supplier_value_columns_dict[supplier] = supplier_value_columns
 
         # Copy common columns from template to target sheet
-        # print(f"Template Common Columns: {common_columns}")
-        # print(f"Supplier Value Columns: {supplier_value_columns_dict}")
         queue = create_insertion_queue(common_columns, supplier_value_columns_dict)
         if not queue:
             print("No columns to process for this template sheet.")
@@ -289,11 +311,8 @@ def side_by_side_combine(
             col_idx_target = i + 1  # Insert in the order of the queue
 
             # Copy column
-            # print(
-            #     f"Copying column {col_letter} from {source} to target at index {col_idx_target}"
-            # )
             end_row_write = copy_column(
-                source_sheet, target_sheet, col_idx_source, col_idx_target
+                source_sheet, target_sheet, col_idx_source, col_idx_target, mis_mat_rows
             )
             # format the header cell for the supplier if there are mismatched rows
             if header_fill_color:
@@ -313,51 +332,42 @@ def side_by_side_combine(
                     horizontal="center", vertical="center"
                 )
                 # apply color formatting to the data rows
-                # empty_rows = 0
-                for row in target_sheet.iter_rows(
-                    min_row=2,
-                    max_row=end_row_write,
-                    min_col=col_idx_target,
-                    max_col=col_idx_target,
-                ):
-                    for cell in row:
-                        cell.fill = PatternFill(
-                            fill_type="solid", start_color=header_fill_color
+                color_to_avoid = "FAA0A0"
+                for row in range(2, end_row_write + 1):
+                    cell_to_fill = target_sheet.cell(row=row, column=col_idx_target)
+                    # only fill if the fill color is not FAA0A0
+                    if (
+                        cell_to_fill.fill
+                        and cell_to_fill.fill.start_color
+                        and cell_to_fill.fill.start_color.rgb
+                    ):
+                        existing_color = str(cell_to_fill.fill.start_color.rgb)
+                    else:
+                        existing_color = ""
+
+                    # Fill only if the cell's color does not match the target color
+                    if color_to_avoid not in existing_color:
+                        cell_to_fill.fill = PatternFill(
+                            fill_type="solid",
+                            start_color=header_fill_color,
+                            end_color=header_fill_color,
                         )
-                # apply color formatting to the mismatched rows
-                if mis_mat_rows:
-                    for row in mis_mat_rows:
-                        col_mis, row_mis = openpyxl.utils.cell.coordinate_from_string(
-                            row
-                        )
-                        row_mis = int(row_mis)  # Convert to integer
-                        col_mis = column_index_from_string(
-                            col_mis
-                        )  # Convert to integer
-                        if col_mis and row_mis:
-                            target_sheet.cell(row=row_mis, column=col_mis).fill = (
-                                PatternFill(
-                                    start_color="FAA0A0",
-                                    end_color="FAA0A0",
-                                    fill_type="solid",
-                                )
-                            )
                 # Add summary if requested
                 if summary_option:
-                    source_text = " ".join(
-                        str(cell.value)
-                        for row in target_sheet.iter_rows(
-                            min_row=2,
-                            max_row=end_row_write,
-                            min_col=col_idx_target,
-                            max_col=col_idx_target,
-                        )
-                        for cell in row
-                        if cell.value
-                        and not str(cell.value)
-                        .replace(".", "", 1)
-                        .isdigit()  # Exclude numbers
-                    )
+                    source_text = " "
+                    for row in target_sheet.iter_rows(
+                        min_row=2,
+                        max_row=end_row_write,
+                        min_col=col_idx_target,
+                        max_col=col_idx_target,
+                    ):
+                        for cell in row:
+                            # check if the cell is rich text
+                            if cell.value is not None:
+                                if isinstance(cell.value, CellRichText):
+                                    source_text += " ".join(cell.value.as_list())
+                                else:
+                                    source_text += " " + str(cell.value) + " "
                     if len(source_text.split()) > 5:
                         summary = summarize_column_simple(source_text)
                         target_sheet.cell(
@@ -426,7 +436,9 @@ def append_logo(workbook, image_path, image_scale=0.8):
     return workbook
 
 
-def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
+def copy_column(
+    source_sheet, target_sheet, source_col_idx, target_col_idx, mis_mat_rows=None
+):
     # print(
     #     f"Copying column {source_col_idx} from {source_sheet.title} to {target_col_idx} in {target_sheet.title}"
     # )
@@ -434,12 +446,11 @@ def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
     target_col_letter = get_column_letter(target_col_idx)
 
     # Initialize target_row at the first row of the target sheet
-
     hidden_count = 0
-    end_row_idx = 300  # default value
+    end_row_idx = 500  # default value
     # Track merged cells in the source column
-    # quick check the first 40 rows to see if there are any values, if all is empty, break the loop
-    max_rows_to_check = min(source_sheet.max_row, 40)
+    # quick check the first 60 rows to see if there are any values, if all is empty, break the loop
+    max_rows_to_check = min(source_sheet.max_row, 60)
     check_empty = 0
     for row in range(1, max_rows_to_check + 1):
         source_cell = source_sheet.cell(row=row, column=source_col_idx)
@@ -447,46 +458,46 @@ def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
             None,
             "",
         ):  # If a non-empty cell is found, exit early
-            # print(f"Non-empty cell detected at row {row}.")
             break
         check_empty += 1
 
     # If all rows are empty, exit the function
     if check_empty == max_rows_to_check:
-        # print("All checked rows are empty. Exiting the function.")
         return end_row_idx
     target_row = 1
     merged_dict = generate_merged_dict(source_sheet)
     # Iterate over each row in the source sheet
     empty_rows_cont = 0
-    for row in range(1, min(source_sheet.max_row + 1, 300)):
+    if mis_mat_rows:
+        # covert to a list of tuples for easy comparison
+        mis_mat_rows = [coordinate_from_string(row) for row in mis_mat_rows]
+    for row in range(1, min(source_sheet.max_row + 1, 500)):
         source_cell = source_sheet.cell(row=row, column=source_col_idx)
         target_cell = target_sheet.cell(row=target_row, column=target_col_idx)
         if source_cell.value is None or source_cell.value == "":
             empty_rows_cont += 1
-            if empty_rows_cont > 20:
-                # print("More than 20 continuous empty rows detected. breaking the loop.")
+            if empty_rows_cont > 80:
                 end_row_idx = row - empty_rows_cont + 1
+
                 break
         else:
             empty_rows_cont = 0
         # Skip hidden rows in the source sheet
         if getattr(source_sheet.row_dimensions[row], "hidden", False):
             hidden_count += 1
-            if hidden_count > 30:
-                # print("More than 30 hidden rows detected. breaking the loop.")
-                end_row_idx = row - hidden_count + 1
+            if hidden_count > 60:
+
+                end_row_idx = row - empty_rows_cont + 1
+
                 break
         else:
             hidden_count = 0
-        # if found more than 30 continuous empty rows, break the loop
-        # if found "=" in source_cell.value print the cell value
-        if "=" in str(source_cell.value):
-            print(
-                f"Found formula in cell {source_cell.coordinate}: {source_cell.value}"
-            )
-        target_cell.value = source_cell.value
-        target_cell.data_type = source_cell.data_type
+
+        source_cell_value = copy(source_cell.value)
+        # if isinstance(source_cell_value, CellRichText):
+        #     source_cell_value = "\n".join(source_cell_value.as_list())
+        target_cell.value = source_cell_value
+        target_cell.data_type = copy(source_cell.data_type)
 
         try:
             if source_cell.has_style:
@@ -494,7 +505,7 @@ def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
                 target_cell.border = copy(source_cell.border)
                 target_cell.fill = copy(source_cell.fill)
                 target_cell.number_format = copy(source_cell.number_format)
-                # target_cell.protection = copy(source_cell.protection)
+                target_cell.protection = copy(source_cell.protection)
                 target_cell.alignment = copy(source_cell.alignment)
         except Exception as e:
             print(f"Error copying styles for cell {source_cell.coordinate}: {e}")
@@ -504,12 +515,30 @@ def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
 
         if source_cell.comment:
             target_cell.comment = copy(source_cell.comment)
+        if mis_mat_rows:
+            col_s, row_s = coordinate_from_string(source_cell.coordinate)
+            for mis_row in mis_mat_rows:
+                if mis_row[1] == row_s:
+                    # conver mis_row[0] to column index
+                    col_mis_idx = column_index_from_string(mis_row[0])
+                    # print(
+                    #     f"Column index of the mismatched row: {col_mis_idx, type(col_mis_idx)} and the source column index is: {source_col_idx, type(source_col_idx)}"
+                    # )
+                    if (
+                        source_col_idx - col_mis_idx == 1
+                    ):  # meaning the mismatched column is the previous column
+                        # print(
+                        #     f"Marking cell {source_cell.coordinate} as mismatched, the column index is: {source_col_idx} and the mis_col_idx is: {col_mis_idx}"
+                        # )
+                        target_cell.fill = PatternFill(
+                            start_color="FAA0A0", end_color="FAA0A0", fill_type="solid"
+                        )
 
-        # Increment the target row index for the next copy
         target_row += 1
 
-    if end_row_idx == 300:
-        end_row_idx = target_row
+    if end_row_idx == 500:
+        end_row_idx = target_row - empty_rows_cont + 1
+
     # Perform merging of cells after copying data
     merge_columns_in_target_sheet(
         target_sheet, merged_dict, source_col_idx, target_col_idx
@@ -522,12 +551,6 @@ def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
         target_dim.width = source_dim.width
     if hasattr(source_dim, "hidden"):
         target_dim.hidden = source_dim.hidden
-    # for key, value in source_dim.__dict__.items():
-    #     if key in [
-    #         "width",
-    #         "hidden",
-    #     ]:  # , "min", "max", "hidden", "auto_size", "bestFit"]:
-    #         target_dim.__dict__[key] = value
 
     return end_row_idx
 
@@ -536,14 +559,13 @@ def copy_column(source_sheet, target_sheet, source_col_idx, target_col_idx):
 def copy_sheet(source_sheet, target_sheet):
     # Copy all columns
     hidden_count = 0
-    for col in source_sheet.iter_cols(max_col=min(source_sheet.max_column, 50)):
+    for col in source_sheet.iter_cols(max_col=min(source_sheet.max_column, 100)):
         col_idx = col[0].column
         # Check if the column is hidden
         col_letter = get_column_letter(col_idx)
         if source_sheet.column_dimensions[col_letter].hidden:
             hidden_count += 1
-            if hidden_count > 20:
-                # print("More than 20 hidden columns detected. Stopping the loop.")
+            if hidden_count > 60:
                 break
 
             continue
@@ -567,13 +589,10 @@ def copy_sheet_attributes(source_sheet, target_sheet):
     target_sheet.print_area = source_sheet.print_area
     target_sheet.freeze_panes = source_sheet.freeze_panes
 
-    # Copy row dimensions
-    # for rn, source_row in source_sheet.row_dimensions.items():
-    #     target_sheet.row_dimensions[rn] = copy(source_row)
+    # copy the row height
+    for rn, source_row in source_sheet.row_dimensions.items():
+        target_sheet.row_dimensions[rn].ht = copy(source_row.ht)
 
-    # Copy column dimensions
-    # for cn, source_col in source_sheet.column_dimensions.items():
-    #     target_sheet.column_dimensions[cn] = copy(source_col)
     # Copy merged cells
     for merged_range in source_sheet.merged_cells.ranges:
         target_sheet.merge_cells(str(merged_range))
@@ -596,7 +615,9 @@ def get_files(supplier_info, sheet_indexes, doc_type):
                 continue
             # read only
             sup_excel = load_workbook(
-                supplier[doc_type], rich_text=True, data_only=True
+                supplier[doc_type],
+                rich_text=st.session_state.richtext_option,
+                data_only=True,
             )
             sup_sheets = [
                 sup_excel[sheet]
@@ -605,14 +626,9 @@ def get_files(supplier_info, sheet_indexes, doc_type):
             ]
             for sheet_idx in sheet_indexes:
                 sheet = sup_sheets[sheet_idx]
-                # title = f"{supplier['name']}_{sheet.title}"[:30]
-                # sheet.title = title
+
                 worksheets_dict[supplier["name"]].append(sheet)
-                # dfs_dict[supplier["name"]].append(
-                #     pd.read_excel(
-                #         supplier[doc_type], sheet_name=sheet.title, engine="openpyxl"
-                #     )
-                # )
+
     st.toast("Supplier Files read successfully! 📚", icon="✅")
 
     return dfs_dict, worksheets_dict
@@ -712,10 +728,6 @@ def write_summary_to_sheet(summary_df, grand_total_df, summary_sheet):
         # plot bar chart of the grand total summary
         chart = BarChart()
         chart.type = "col"  # Column chart
-        # chart.style = 2
-        # second style
-
-        # chart.legend =
         chart.grouping = "clustered"  # Set grouping to clustered
         chart.title = "Supplier Price Comparison by Category"
         chart.x_axis.title = "Category"
@@ -756,7 +768,7 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
         col_letter = get_column_letter(col[0].column)
         headers = [(cell.value, cell.row) for cell in col if cell.font.bold]
         headers_dict[col_letter] = headers
-
+    # print(headers_dict)
     # Identify columns for price data
     price_label_col = None
     max_len = 0
@@ -768,22 +780,11 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
             if len(value) > max_len:
                 max_len = len(value)
                 price_label_col = key
-
-    # Aggregate price data for suppliers
-    agg_dict = defaultdict(list)
-    for key, value in supplier_cols_dict.items():
-        for col in value:
-            count_not_none = sum(
-                1
-                for _, row in headers_dict[price_label_col]
-                if price_sheet[f"{col}{row}"].value is not None
-            )
-            if count_not_none / len(headers_dict[price_label_col]) > 0.7:
-                agg_dict[key].append(col)
+    # print(dict(supplier_cols_dict))
 
     # Compile summary data
     summary_data = []
-    for supplier, cols in agg_dict.items():
+    for supplier, cols in supplier_cols_dict.items():
         for col in cols:
             col_headers = headers_dict.get(col, [])
             if len(col_headers) < 2:
@@ -796,6 +797,9 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
                     lower_row = row
                 value = price_sheet[f"{col}{row}"].value
                 price_value = re.sub(r"[^\d.]", "", str(value))
+                # print(
+                #     f"supplier: {supplier}, category: {category}, subcategory: {cate}, Cell value: {value} Price value: {price_value}"
+                # )
                 if price_value:
                     try:
                         price_value = round(float(price_value), 2)
@@ -834,6 +838,7 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
 
     # Pivot the DataFrame and reset the index
     if not summary_df.empty:
+        # print(summary_df)
         merged_df = summary_df.pivot_table(
             index=["Category", "Subcategory"],
             values=[
@@ -843,6 +848,7 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
             ],
             aggfunc="first",
         ).reset_index()
+        # print(merged_df)
         # Ensure that only existing suppliers are used
         existing_suppliers = [
             supplier for supplier in supplier_names if supplier in merged_df.columns
@@ -868,6 +874,7 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
                 grand_total_df = (
                     merged_df.groupby("Category")[numeric_columns].sum().reset_index()
                 )
+            # print(grand_total_df)
         except Exception as e:
             print(f"Error Creating Summary Table: {e}")
             return 0
@@ -878,21 +885,8 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
     return 1
 
 
-# with st.expander("Debugging Info"):
-#     st.write("### Event Details")
-#     st.write(f"- **Event Name**: {st.session_state.event_name}")
-#     st.write(f"- **Number of Suppliers**: {st.session_state.num_suppliers}")
-#     st.write("- **Template Files**:")
-#     for doc_type, file in st.session_state.template_files.items():
-#         st.write(f"  - {doc_type}: {file.name if file else 'Not Uploaded'}")
-#     st.write("- **Suppliers Info**:")
-#     for i, supplier in enumerate(st.session_state.suppliers):
-#         st.write(f"  - Supplier {i+1}:")
-#         st.write(f"    - Name: {supplier.get('name', 'Unnamed')}")
-#         for doc_type in ["Pricing", "Questionnaire"]:
-#             file = supplier.get(doc_type)
-#             st.write(f"    - {doc_type}: {file.name if file else 'Not Uploaded'}")
-#     st.write(f"- **Event Option**: {st.session_state.event_option}")
+# streamlit_app\kellanova_logo.png
+st.image(r"assets/kellanova_logo.png", width=200)
 
 # Check if suppliers are set up
 if "suppliers" not in st.session_state or len(st.session_state.suppliers) == 0:
@@ -925,7 +919,7 @@ for i, supplier in enumerate(st.session_state.suppliers):
 event_name = st.session_state.event_name
 event_option = st.session_state.event_option
 # logo path
-st.session_state.logo_path = r"kellanova_logo.png"
+st.session_state.logo_path = r"assets/kellanova_logo.png"
 doc_type1, doc_type2 = st.session_state.doc_types
 
 
@@ -950,11 +944,25 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+richtext_option = st.checkbox(
+    "Rich Text",
+    value=False,
+    key="richtext_option",
+    help="Keep all the original formatting within a cell when consolidating",
+)
+
 ### Pricing Sheets Consolidation
 
 st.markdown("### :green[For **Pricing**]")
+st.markdown(
+    "***Note:** Summary tab and chart for Pricing only works in **Side by Side** consolidation.*"
+)
+
 template_pri = st.session_state.template_files[doc_type1]
-wb_template_pri = load_workbook(template_pri, rich_text=True, data_only=True)
+wb_template_pri = load_workbook(
+    template_pri, rich_text=st.session_state.richtext_option, data_only=True
+)
 all_sheets_pri = wb_template_pri.sheetnames
 
 pricing_sheets_list = st.multiselect(
@@ -1036,7 +1044,9 @@ else:
 
 st.markdown("#### :orange[For **Questionnaire**]")
 template_ques = st.session_state.template_files[doc_type2]
-wb_template_ques = load_workbook(template_ques, rich_text=True, data_only=True)
+wb_template_ques = load_workbook(
+    template_ques, rich_text=st.session_state.richtext_option, data_only=True
+)
 all_sheets_ques = wb_template_ques.sheetnames
 
 questionnaire_sheets_list = st.multiselect(
@@ -1065,15 +1075,9 @@ summary_option = st.checkbox(
     "Questionnaire summary included",
     value=False,
     key="summary_option",
-    help="Include a summary of the supplier responses at the end of each column.",
+    help="Include a summary of the supplier responses at the end of each column. Side by Side mode only.",
 )
 
-# st.write(
-#     "ℹ️ The summary option will provide a brief summary of the data in each column."
-# )
-# st.write(st.session_state.summary_option)
-
-# st.write(f"### Current Mode: **{st.session_state.ques_comb_mode}**")
 
 if st.button("Consolidate", key="consolidate_ques"):
     consolidated_ques = openpyxl.Workbook()

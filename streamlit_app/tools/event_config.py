@@ -17,6 +17,7 @@ def initialize_session_state():
 
 initialize_session_state()
 # Configuration form
+st.image(r"assets/kellanova_logo.png", width=200)
 st.write("# RFP Event Configuration")
 
 # Event name
@@ -32,16 +33,7 @@ st.session_state.event_name = event_name
 event_option = st.radio(
     "Select the document configuration for this event",
     ("In a Single File", "In Separate Files"),
-    # index=0 if st.session_state.event_option == "In a Single File" else 1,
-    # key="event_option",
 )
-
-# Event option: "In a Single File" or "In Separate Files"
-# event_option = st.radio(
-#     "Select the document configuration for this event",
-#     ("In a Single File", "In Separate Files"),
-#     index=0 if st.session_state.event_option == "In a Single File" else 1,
-# )
 
 
 # # Update session state when the event_option changes
@@ -91,7 +83,7 @@ for i in range(num_suppliers):
         supplier_name = st.text_input(
             f"Supplier {i + 1} Name",
             value=st.session_state.suppliers[i]["name"],
-            placeholder="This name will be used to refer to the supplier in the consolidation document.",
+            placeholder="This name will be used to refer to the supplier in the consolidated document.",
         )
         st.session_state.suppliers[i]["name"] = supplier_name
 
@@ -130,21 +122,3 @@ if st.button("Submit Configuration"):
     st.success(
         "Configuration updated successfully! Please proceed to the consolidation page."
     )
-
-# # Debugging Info - Show only after submission
-# if getattr(st.session_state, "submitted", False):
-#     with st.expander("Debugging Info"):
-#         st.write("### Event Details")
-#         st.write(f"- **Event Name**: {st.session_state.event_name}")
-#         st.write(f"- **Number of Suppliers**: {st.session_state.num_suppliers}")
-#         st.write("- **Template Files**:")
-#         for doc_type, file in st.session_state.template_files.items():
-#             st.write(f"  - {doc_type}: {file.name if file else 'Not Uploaded'}")
-#         st.write("- **Suppliers Info**:")
-#         for i, supplier in enumerate(st.session_state.suppliers):
-#             st.write(f"  - Supplier {i+1}:")
-#             st.write(f"    - Name: {supplier.get('name', 'Unnamed')}")
-#             for doc_type in ["Pricing", "Questionnaire"]:
-#                 file = supplier.get(doc_type)
-#                 st.write(f"    - {doc_type}: {file.name if file else 'Not Uploaded'}")
-#         st.write(f"- **Event Option**: {st.session_state.event_option}")
