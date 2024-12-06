@@ -6,56 +6,87 @@ def main_page():
     st.image(r"assets/kellanova_logo.png", width=200)
     st.title("Welcome to the Automated RFP Tool")
 
-    st.markdown("#### :red[Where to start?]")
+    st.markdown("### :blue[▶️ Where to start?]")
 
     st.markdown(
         """
+        ***Auto RFP Analyzer:** Simplifies consolidating and analyzing questionnaire and pricing data from vendors.*
         This application provides the following tools:
 
-        1. **RFP Config:** 
+        1. ⚙️ **RFP Config:** 
         Configure RFP event-related settings for the consolidation file.
-        2. **Consolidate:** 
+        2. 📋 **Consolidate:** 
         Aggregate and analyze RFP responses from multiple suppliers either side-by-side or in separate sheets.
         
         👈 Use the *navigation menu* on the left to select a tool.
         
-        Expand the ℹ️ section below for a more detailed guide.
+        *Expand the ℹ️ section below for a more detailed guide.*
         """
     )
-    with st.expander("ℹ️ See Full Guide"):
+    with st.expander("ℹ️ Full User Guide"):
         st.markdown(
             """
-            ### Step 1: Choose File Configuration
-            Decide if the questionnaire and pricing contents are in a single file or separate Excel files.
-            
-            ### Step 2: Upload Files
-            **Navigate to the RFP Config section of the tool.**
-            
-            **Upload template files:**  
-            - Move to the “Template Files section” and upload the template files (the files that were sent to the vendors).  
-            - Select the template file that contains the questionnaire and pricing respectively.
-            
-            **Upload vendor files:**  
-            - Move to the "Supplier Response Files" section to upload files received from each vendor.  
-            - Ensure all files are in `.xlsx` format.  
-            - The tool will validate the uploaded files.
-            
-            ### Step 3: Select Consolidation Method
-            Choose between the following options:  
-            - **Side-by-Side Consolidation:** Vendor responses are aligned in a single sheet.  
-            - **Separate Sheet Consolidation:** Each vendor’s responses are placed in its own sheet.  
-            
-            If required, enable the Summarization option to generate concise summaries of responses.
-            
-            ### Step 4: Configure Settings
-            Move to the consolidate section of the tool to specify which sheets to include in the consolidation process and generate consolidated files.
-            
-            ### Step 5: Consolidate Data and Download Results
-            - Click the **Consolidate Data** button.  
-            - Wait for the tool to process the files and combine the data.  
-            - Click the **Download Consolidated File** button.  
-            - Save the file locally for further analysis.
-            """
+        ### 📱 Features
+        #### 💲Pricing
+        - **Organized Data**: Differentiates descriptions and prices.  
+        - **Color-Coded Pricing**: Highlights vendor-specific values.  
+        - **Aggregation Options**:  
+        - **Side-by-Side**: Prices from multiple vendors in one sheet.  
+        - **Sheet-by-Sheet**: Vendor prices in separate sheets.  
+        - **Analysis Tools**: Generates summaries and diagrams.
+
+        #### ❔Questionnaire
+        - **Upload Files**: Accepts valid `.xlsx` files.
+        - **Parse Responses**: Matches template columns, highlights mismatched rows, and extracts vendor data.
+        - **Consolidation Options**:  
+        - **Side-by-Side**: All responses in one sheet.  
+        - **Separate Sheets**: Each vendor's data in its own sheet.  
+        - **Summarization**: Option to create concise summaries.
+
+        ---
+
+        ### 📖 Instructions
+
+        #### 🚀 Launch
+        Run in terminal:  
+        ```bash
+        streamlit run [file_path]
+        ```
+        Replace `[file_path]` with the app file's path.
+
+
+        #### 🪜 Steps
+
+        1. **Choose File Organization**: Single or separate questionnaire and pricing files.  
+        2. **Upload Files**:  
+        - **Templates**: Upload questionnaire and pricing templates.  
+        - **Vendor Files**: Upload `.xlsx` responses.  
+        3. **Select Consolidation**:  
+        - **Side-by-Side**: All in one sheet.  
+        - **Separate Sheets**: Vendor-specific sheets.  
+        - Optionally enable **Summarization**.  
+        4. **Configure Settings**: Select sheets to consolidate.  
+        5. **Consolidate and Download**:  
+        - Click **Consolidate Data**.  
+        - After processing, click **Download Consolidated File**.
+
+
+        #### ❗Error Handling
+
+        - **Invalid File**: Upload a valid `.xlsx` file.  
+        - **No Matching Columns**: Verify templates match vendor files.  
+        - **Missing Summarization**: Check input for meaningful content.
+
+        ---
+
+        ### ☑️ Tips 
+
+        - Align vendor files with template structure.  
+        - Use **Side-by-Side Consolidation** for easy comparisons.  
+        - Enable **Summarization** for quick reviews.  
+        - Enhance pricing diagrams by adjusting chart elements (e.g., Axes, Data Labels).
+        - **⚠️Warning messages** can be generated when opening the consolidated file in Excel especially when suppliers use Rich Text formats in their responses. This can be ignored, click **Yes** to proceed.
+        """
         )
 
 

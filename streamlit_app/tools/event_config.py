@@ -3,6 +3,16 @@ import streamlit as st
 
 # Set initial configuration if not already set
 def initialize_session_state():
+    """
+    Initialize the session state with the required variables if they do not exist.
+
+    The variables are:
+    - event_name: The name of the RFP event, which will appear in the filename for the consolidated document.
+    - event_option: The document configuration for this event, which can be either "In a Single File" or "In Separate Files".
+    - suppliers: A list of supplier names.
+    - template_files: A dictionary with keys "Pricing" and "Questionnaire", and values that are the uploaded template files.
+    - doc_types: A list of document types, which is initially set to ["Pricing", "Questionnaire"].
+    """
     if "event_name" not in st.session_state:
         st.session_state.event_name = ""
     if "event_option" not in st.session_state:

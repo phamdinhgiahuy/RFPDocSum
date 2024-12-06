@@ -1,33 +1,33 @@
 import streamlit as st
-import re
-import pandas as pd
-from collections import defaultdict
-from openpyxl import load_workbook
+
 import openpyxl
+from openpyxl import load_workbook
+from openpyxl.cell.rich_text import TextBlock, CellRichText
+from openpyxl.styles import PatternFill, Border, Side, Alignment, Protection, Font
+from openpyxl.utils import get_column_letter
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
+from openpyxl.chart import BarChart, Reference
+
+from fuzzywuzzy import fuzz
+from itertools import cycle
+from collections import deque, defaultdict
 from copy import copy
 import io
-from openpyxl.cell.rich_text import TextBlock, CellRichText
-from openpyxl.cell.text import InlineFont
-from openpyxl.drawing.image import Image
-from openpyxl.styles import PatternFill, Border, Side, Alignment, Protection, Font
-from difflib import SequenceMatcher
+import re
+import pandas as pd
+
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
-from openpyxl.styles import PatternFill
-from openpyxl.utils import get_column_letter
-from openpyxl.utils.dataframe import dataframe_to_rows
-from fuzzywuzzy import fuzz
-from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
-from itertools import cycle
-from collections import deque
-from openpyxl.cell import Cell
-from openpyxl.chart import BarChart, Reference
-
-# from openpyxl.cell.rich_text import RichText
 
 
 def fill_color_switch():
+    """
+    Returns a cycle of 10 colors used to fill cells in a worksheet. Each color represents a different supplier.
+
+    The colors are chosen to be visually distinct and not too bright (color blindness friendly).
+    """
     colors = [
         "E4DFEC",
         "D4D5F8",
@@ -44,6 +44,19 @@ def fill_color_switch():
 
 
 def generate_merged_dict(sheet):
+    """
+    Generates a dictionary mapping column indices to lists of merged ranges
+    in that column.
+
+    The output dictionary will have the following structure:
+    {
+        column_idx1: [merged_range1, merged_range2, ...],
+        column_idx2: [merged_range3, merged_range4, ...],
+        ...
+    }
+
+    Only vertical merges are handled (i.e., merged cells in the same column).
+    """
     merged_dict = {}
 
     for merged_range in sheet.merged_cells.ranges:
@@ -68,6 +81,18 @@ def generate_merged_dict(sheet):
 def merge_columns_in_target_sheet(
     target_sheet, merged_dict, source_col_idx, target_col_idx
 ):
+    """
+    Merges columns in the target sheet based on the merged ranges found in the source sheet.
+
+    Args:
+        target_sheet: The target sheet where the columns will be merged.
+        merged_dict: A dictionary mapping column indices to lists of merged ranges.
+        source_col_idx: The column index from the source sheet where the merged ranges are found.
+        target_col_idx: The column index in the target sheet where the columns will be merged.
+
+    Returns:
+        None
+    """
     if source_col_idx not in merged_dict:
         # print(f"No merged ranges found for column {source_col_idx} in merged_dict.")
         return
@@ -87,6 +112,20 @@ def merge_columns_in_target_sheet(
 
 # Function to find common columns by comparing values
 def find_matching_cols(template_sheet, supplier_sheet, threshold=80):
+    """
+    Find the columns that are common between the template sheet and the supplier sheet.
+
+    Args:
+        template_sheet: The template sheet.
+        supplier_sheet: The supplier sheet.
+        threshold: The threshold for fuzzy matching.
+
+    Returns:
+        A tuple of three lists: common_columns, mis_mat_rows, and supplier_value_columns.
+            common_columns: The columns that are common between the template and the supplier.
+            mis_mat_rows: The rows that have mismatched values between the template and the supplier.
+            supplier_value_columns: The columns that contain the supplier values.
+    """
     common_columns = []
     supplier_value_columns = []
     mis_mat_rows = []
@@ -94,17 +133,17 @@ def find_matching_cols(template_sheet, supplier_sheet, threshold=80):
     for col in template_sheet.iter_cols(max_col=min(template_sheet.max_column, 100)):
         # Get the column letter of the current column
         col_letter = get_column_letter(col[0].column)
-        # row_values_template = [cell.value for cell in col if cell.value is not None]
+        # Get the values of the current column in the template sheet
         row_values_template = []
         for cell in col:
             row_value = cell.value
             if row_value is not None:
-                # row_values_template.append(row.value)
-                # if instance of rich text, convert to string
+                # If the cell is rich text, convert to string
                 if isinstance(row_value, CellRichText):
                     row_values_template.append(" ".join(row_value.as_list()))
                 else:
                     row_values_template.append(str(row_value))
+        # Get the values of the current column in the supplier sheet
         row_values_suppliers = []
         for row_sup in supplier_sheet.iter_rows(
             min_col=col[0].column,
@@ -113,8 +152,7 @@ def find_matching_cols(template_sheet, supplier_sheet, threshold=80):
         ):
             for cell in row_sup:
                 if cell.value is not None:
-                    # row_values_suppliers.append(cell.value)
-                    # if instance of rich text, convert to string
+                    # If the cell is rich text, convert to string
                     if isinstance(cell.value, CellRichText):
                         row_values_suppliers.append(" ".join(cell.value.as_list()))
                     else:
@@ -124,19 +162,14 @@ def find_matching_cols(template_sheet, supplier_sheet, threshold=80):
             continue
 
         # Fuzzy matching between the string joint from the template and the supplier list
-
         temp_row_str = " ".join(row_values_template)
         suppliers_row_str = " ".join(row_values_suppliers)
         similarity = fuzz.ratio(temp_row_str, suppliers_row_str)
-        # print(f"Column: {col_letter}, Similarity: {similarity}, Threshold: {threshold}")
-        # print row_values_template and row_values_suppliers
 
         if similarity > threshold:
             common_columns.append(col_letter)
             if similarity < 100:
                 # Highlight the row in the supplier sheet that does not match the template
-                # print(f"Row values from template: {row_values_template}")
-                # print(f"Row values from supplier: {row_values_suppliers}")
                 for row_sup in supplier_sheet.iter_rows(
                     min_col=col[0].column,
                     max_col=col[0].column,
@@ -145,7 +178,7 @@ def find_matching_cols(template_sheet, supplier_sheet, threshold=80):
                     for cell in row_sup:
                         cell_val, cell_coord = cell.value, cell.coordinate
                         if cell_val is not None:
-                            # check if the cell is rich text
+                            # Check if the cell is rich text
                             if isinstance(cell_val, CellRichText):
                                 cell_val = " ".join(cell_val.as_list())
                             else:
@@ -168,6 +201,20 @@ def find_matching_cols(template_sheet, supplier_sheet, threshold=80):
 def separate_sheet_combine(
     workbook, template_sheets, supplier_sheets_dict, threshold=80
 ):
+    """
+    Combine files side by side in the same sheet.
+
+    Parameters:
+    workbook (openpyxl.Workbook): The workbook to combine the sheets into.
+    template_sheets (list): A list of template sheets to combine.
+    supplier_sheets_dict (dict): A dictionary mapping supplier names to their
+        corresponding sheets to combine.
+    threshold (int): The threshold for fuzzy matching between the template and
+        supplier sheets.
+
+    Returns:
+    openpyxl.Workbook: The combined workbook with all the sheets.
+    """
     st.toast(f"Combining files in progress...", icon="⏳")
     for idx, template_sheet in enumerate(template_sheets):
         # copy the template sheet to the workbook
@@ -180,10 +227,11 @@ def separate_sheet_combine(
             sheet_title = f"{supplier} {template_sheet.title}"[:30]
             target_sheet = workbook.create_sheet(sheet_title)
             copy_sheet(supplier_sheet, target_sheet)
+            # Find matching columns between the template and supplier sheets
             _, mis_mat_rows, _ = find_matching_cols(
                 template_sheet, supplier_sheet, threshold
             )
-            # highligh the mismatched rows
+            # Highlight the mismatched rows
             if mis_mat_rows:
                 for mis_mat_row in mis_mat_rows:
                     col_mis, row_mis = openpyxl.utils.cell.coordinate_from_string(
@@ -207,6 +255,20 @@ def separate_sheet_combine(
 
 
 def create_insertion_queue(common_columns, supplier_value_columns_dict):
+    """
+    Create a queue of columns to be inserted into the final combined sheet.
+
+    The queue is sorted by column letter and includes a secondary sort by source type.
+    Priority: template columns come before supplier columns with the same letter.
+
+    Parameters:
+    common_columns (list): A list of common column letters between the template and supplier sheets.
+    supplier_value_columns_dict (dict): A dictionary mapping supplier names to their corresponding
+        columns of values to be inserted.
+
+    Returns:
+    deque: The insertion queue.
+    """
     # Initialize a list to hold queue items
     queue_items = []
 
@@ -236,6 +298,20 @@ def side_by_side_combine(
     threshold=80,
     summary_option=False,
 ):
+    """
+    Combine the template sheets with the supplier sheets side by side.
+
+    Parameters:
+    workbook (openpyxl.Workbook): The workbook to combine the sheets into.
+    template_sheets (list): A list of template sheets to combine.
+    supplier_sheets_dict (dict): A dictionary mapping supplier names to their
+        corresponding sheets to combine.
+    threshold (int): The threshold for fuzzy matching between the template and
+        supplier sheets.
+
+    Returns:
+    openpyxl.Workbook: The combined workbook with all the sheets.
+    """
     st.toast(f"Combining files in progress...", icon="⏳")
 
     # Iterate over each template sheet
@@ -252,11 +328,21 @@ def side_by_side_combine(
         target_sheet = workbook.create_sheet(f"Combined {template_sheet.title}"[:30])
 
         # Initialize variables to store column data and mismatched rows
-        common_columns = []
-        uncommon_columns = []
-        mis_mat_rows_dict = {}
-        supplier_value_columns_dict = {}
-        supplier_colors = {}
+        common_columns = (
+            []
+        )  # List of common column letters between the template and supplier sheets
+        uncommon_columns = (
+            []
+        )  # List of columns that are not common between the template and supplier sheets
+        mis_mat_rows_dict = (
+            {}
+        )  # Dictionary mapping supplier names to their corresponding mismatched rows
+        supplier_value_columns_dict = (
+            {}
+        )  # Dictionary mapping supplier names to their corresponding columns of values
+        supplier_colors = (
+            {}
+        )  # Dictionary mapping supplier names to their corresponding fill colors
         color_cycle = fill_color_switch()
 
         # Iterate over each supplier and process their sheet
@@ -268,12 +354,6 @@ def side_by_side_combine(
             com_columns, mis_mat_rows, supplier_value_columns = find_matching_cols(
                 template_sheet, supplier_sheet, threshold
             )
-
-            # Debug: Print matched and mismatched columns
-            # print(f"Supplier: {supplier}")
-            # print(f"  Common Columns: {com_columns}")
-            # print(f"  Mismatched Rows: {mis_mat_rows}")
-            # print(f"  Supplier Value Columns: {supplier_value_columns}")
 
             # Add matching columns to the final list (ensure no duplicates)
             common_columns.extend(
@@ -298,6 +378,7 @@ def side_by_side_combine(
             source = item["source"]
             header_fill_color = None
             mis_mat_rows = None
+
             # Determine the source sheet
             if source == "template":
                 source_sheet = template_sheet
@@ -401,36 +482,85 @@ def side_by_side_combine(
 
 
 # Function to summarize text using Sumy
-def summarize_column_simple(text, sentence_count=3):
+def summarize_column_simple(text: str, sentence_count: int = 3) -> str:
+    """
+    Summarize the given text using Sumy's Latent Semantic Analysis (LSA) summarizer.
+
+    Args:
+        text (str): The text to be summarized.
+        sentence_count (int, optional): The number of sentences in the summary. Defaults to 3.
+
+    Returns:
+        str: The summary of the text.
+    """
     try:
+        # Create a Sumy parser from the text
         parser = PlaintextParser.from_string(text, Tokenizer("english"))
+
+        # Create a Sumy LSA summarizer
         summarizer = LsaSummarizer()
+
+        # Set the stop words for the summarizer to English
         summarizer.stop_words = "english"
+
+        # Summarize the text
         summary = summarizer(parser.document, sentence_count)
+
+        # Join the summary sentences into a single string
         return " ".join(str(sentence) for sentence in summary)
     except Exception as e:
+        # Return an error message if there's an exception
         return f"Error summarizing text: {e}"
 
 
 # function to save the consolidated file and let it be downloadable by the user
 def save_consolidated_file(consolidated):
+    """
+    Save the consolidated file to a BytesIO object and return it for downloading.
+
+    Args:
+        consolidated (openpyxl.Workbook): The consolidated workbook.
+
+    Returns:
+        io.BytesIO: The BytesIO object containing the workbook.
+    """
+    # Create a BytesIO object to store the workbook
     file_stream = io.BytesIO()
+
+    # Save the workbook to the BytesIO object
     consolidated.save(file_stream)
+
+    # Reset the file pointer to the beginning of the BytesIO object
     file_stream.seek(0)
+
     return file_stream
 
 
 def append_logo(workbook, image_path, image_scale=0.8):
+    """
+    Append the logo to each sheet in the workbook.
+
+    Args:
+        workbook (openpyxl.Workbook): The workbook to append the logo to.
+        image_path (str): The path to the image file. If None or empty, no image is appended.
+        image_scale (float): The scale of the image. Default is 0.8.
+    """
+    # get all the sheet names
     sheet_names = workbook.sheetnames
+    # get all the worksheets
     worksheets = [workbook[sheet_name] for sheet_name in sheet_names]
     for worksheet in worksheets:
         # add logo to the first cell of the worksheet
         if image_path:
+            # import the Image class from openpyxl.drawing.image
             from openpyxl.drawing.image import Image
 
+            # create an Image object
             logo = Image(image_path)
+            # scale the image
             logo.width = int(logo.width * image_scale)
             logo.height = int(logo.height * image_scale)
+            # add the image to the worksheet
             worksheet.add_image(logo, "A1")
 
     return workbook
@@ -439,9 +569,18 @@ def append_logo(workbook, image_path, image_scale=0.8):
 def copy_column(
     source_sheet, target_sheet, source_col_idx, target_col_idx, mis_mat_rows=None
 ):
-    # print(
-    #     f"Copying column {source_col_idx} from {source_sheet.title} to {target_col_idx} in {target_sheet.title}"
-    # )
+    """
+    Copy a column from the source sheet to the target sheet.
+
+    Args:
+        source_sheet (openpyxl.Worksheet): The source sheet.
+        target_sheet (openpyxl.Worksheet): The target sheet.
+        source_col_idx (int): The column index of the source sheet.
+        target_col_idx (int): The column index of the target sheet.
+        mis_mat_rows (list): The list of rows that have mismatched values between the source and target sheets.
+    Returns:
+        int: The row index of the last row copied.
+    """
     source_col_letter = get_column_letter(source_col_idx)
     target_col_letter = get_column_letter(target_col_idx)
 
@@ -494,8 +633,6 @@ def copy_column(
             hidden_count = 0
 
         source_cell_value = copy(source_cell.value)
-        # if isinstance(source_cell_value, CellRichText):
-        #     source_cell_value = "\n".join(source_cell_value.as_list())
         target_cell.value = source_cell_value
         target_cell.data_type = copy(source_cell.data_type)
 
@@ -521,15 +658,9 @@ def copy_column(
                 if mis_row[1] == row_s:
                     # conver mis_row[0] to column index
                     col_mis_idx = column_index_from_string(mis_row[0])
-                    # print(
-                    #     f"Column index of the mismatched row: {col_mis_idx, type(col_mis_idx)} and the source column index is: {source_col_idx, type(source_col_idx)}"
-                    # )
                     if (
                         source_col_idx - col_mis_idx == 1
                     ):  # meaning the mismatched column is the previous column
-                        # print(
-                        #     f"Marking cell {source_cell.coordinate} as mismatched, the column index is: {source_col_idx} and the mis_col_idx is: {col_mis_idx}"
-                        # )
                         target_cell.fill = PatternFill(
                             start_color="FAA0A0", end_color="FAA0A0", fill_type="solid"
                         )
@@ -557,17 +688,25 @@ def copy_column(
 
 # function to copy the sheet from source to target
 def copy_sheet(source_sheet, target_sheet):
-    # Copy all columns
-    hidden_count = 0
+    """
+    Copy all columns and sheet-level attributes from the source sheet to the target sheet.
+
+    Args:
+        source_sheet (openpyxl.Worksheet): The sheet to copy from.
+        target_sheet (openpyxl.Worksheet): The sheet to copy to.
+    """
+    hidden_count = 0  # Counter to track consecutive hidden columns
     for col in source_sheet.iter_cols(max_col=min(source_sheet.max_column, 100)):
         col_idx = col[0].column
-        # Check if the column is hidden
         col_letter = get_column_letter(col_idx)
+
+        # Check if the column is hidden
         if source_sheet.column_dimensions[col_letter].hidden:
             hidden_count += 1
-            if hidden_count > 60:
+            if (
+                hidden_count > 60
+            ):  # Stop copying if more than 60 consecutive columns are hidden
                 break
-
             continue
 
         # Copy the column to the same index in the target
@@ -578,8 +717,14 @@ def copy_sheet(source_sheet, target_sheet):
 
 
 def copy_sheet_attributes(source_sheet, target_sheet):
-    # Copy basic sheet attributes
+    """
+    Copy various attributes from a source sheet to a target sheet.
 
+    Args:
+        source_sheet (openpyxl.Worksheet): The sheet to copy attributes from.
+        target_sheet (openpyxl.Worksheet): The sheet to copy attributes to.
+    """
+    # Copy basic sheet properties
     target_sheet.sheet_format = copy(source_sheet.sheet_format)
     target_sheet.sheet_properties = copy(source_sheet.sheet_properties)
     target_sheet.page_margins = copy(source_sheet.page_margins)
@@ -589,17 +734,30 @@ def copy_sheet_attributes(source_sheet, target_sheet):
     target_sheet.print_area = source_sheet.print_area
     target_sheet.freeze_panes = source_sheet.freeze_panes
 
-    # copy the row height
+    # Copy the row heights
     for rn, source_row in source_sheet.row_dimensions.items():
         target_sheet.row_dimensions[rn].ht = copy(source_row.ht)
 
-    # Copy merged cells
+    # Copy merged cell ranges
     for merged_range in source_sheet.merged_cells.ranges:
         target_sheet.merge_cells(str(merged_range))
+
+    # Copy sheet protection settings
     target_sheet.protection = copy(source_sheet.protection)
 
 
 def get_files(supplier_info, sheet_indexes, doc_type):
+    """
+    Read the specified files for each supplier and return the DataFrames and sheets.
+
+    Args:
+        supplier_info (list): List of dictionaries containing supplier information.
+        sheet_indexes (list): List of sheet indexes to read (0-indexed).
+        doc_type (str): Document type to read (either "RFP" or "Proposal").
+
+    Returns:
+        tuple: Two dictionaries, the first containing the DataFrames, the second containing the sheets.
+    """
     dfs_dict = {}
     worksheets_dict = {}
     with st.spinner("Reading files..."):
@@ -608,33 +766,51 @@ def get_files(supplier_info, sheet_indexes, doc_type):
                 dfs_dict[supplier["name"]] = []
                 worksheets_dict[supplier["name"]] = []
             else:
+                # Warn if no file was found
                 st.warning(
                     f"No {doc_type} file found for supplier {supplier['name']}.",
                     icon="⚠️",
                 )
                 continue
-            # read only
+            # Read the file
             sup_excel = load_workbook(
                 supplier[doc_type],
                 rich_text=st.session_state.richtext_option,
                 data_only=True,
             )
+            # Get the visible sheets
             sup_sheets = [
                 sup_excel[sheet]
                 for sheet in sup_excel.sheetnames
                 if sup_excel[sheet].sheet_state == "visible"
             ]
+            # Iterate over the specified sheet indexes
             for sheet_idx in sheet_indexes:
                 sheet = sup_sheets[sheet_idx]
-
+                # Add the sheet to the dictionary
                 worksheets_dict[supplier["name"]].append(sheet)
 
+    # Show a toast when done
     st.toast("Supplier Files read successfully! 📚", icon="✅")
 
     return dfs_dict, worksheets_dict
 
 
 def write_summary_to_sheet(summary_df, grand_total_df, summary_sheet):
+    """
+    Write the summary DataFrame and grand total DataFrame to the summary sheet.
+
+    Args:
+        summary_df (pd.DataFrame): The summary DataFrame
+        grand_total_df (pd.DataFrame): The grand total DataFrame
+        summary_sheet (openpyxl.worksheet.worksheet.Worksheet): The summary sheet
+
+    Note:
+        This function writes the summary DataFrame to the sheet, then writes the
+        grand total DataFrame to the sheet below the summary DataFrame. It also
+        formats the sheet by applying borders to all cells and setting the column
+        widths to auto based on the content.
+    """
     if not summary_df.empty:
         # Pivot the summary DataFrame
         merged_df = summary_df.pivot_table(
@@ -725,7 +901,8 @@ def write_summary_to_sheet(summary_df, grand_total_df, summary_sheet):
                 for row in range(1, summary_sheet.max_row + 1)
             )
             summary_sheet.column_dimensions[column].width = max_length + 2
-        # plot bar chart of the grand total summary
+
+        # Plot bar chart of the grand total summary
         chart = BarChart()
         chart.type = "col"  # Column chart
         chart.grouping = "clustered"  # Set grouping to clustered
@@ -749,7 +926,7 @@ def write_summary_to_sheet(summary_df, grand_total_df, summary_sheet):
         chart.add_data(data, titles_from_data=True)
         chart.set_categories(categories)
         summary_sheet.add_chart(chart, "A" + str(summary_sheet.max_row + 2))
-        # display the category in the x-axis
+        # Display the category in the x-axis
 
         # Add a title for the chart
         summary_sheet.cell(
@@ -757,18 +934,28 @@ def write_summary_to_sheet(summary_df, grand_total_df, summary_sheet):
             column=1,
             value="Supplier Price Comparison by Category",
         )
-    else:
-        print("The summary_df is empty; ensure your input data is correct.")
 
 
 def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
+    """
+    Create a summary price table by extracting price data from the price sheet
+    and writing it to the summary sheet.
+
+    Args:
+        summary_sheet (openpyxl.Worksheet): The worksheet to write the summary data.
+        price_sheet (openpyxl.Worksheet): The worksheet to extract price data from.
+        supplier_names (list): A list of supplier names to map columns.
+
+    Returns:
+        int: 1 if the summary table is created successfully, 0 otherwise.
+    """
     # Extract headers and map columns to suppliers
     headers_dict = {}
     for col in price_sheet.iter_cols():
         col_letter = get_column_letter(col[0].column)
         headers = [(cell.value, cell.row) for cell in col if cell.font.bold]
         headers_dict[col_letter] = headers
-    # print(headers_dict)
+
     # Identify columns for price data
     price_label_col = None
     max_len = 0
@@ -780,7 +967,6 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
             if len(value) > max_len:
                 max_len = len(value)
                 price_label_col = key
-    # print(dict(supplier_cols_dict))
 
     # Compile summary data
     summary_data = []
@@ -797,9 +983,6 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
                     lower_row = row
                 value = price_sheet[f"{col}{row}"].value
                 price_value = re.sub(r"[^\d.]", "", str(value))
-                # print(
-                #     f"supplier: {supplier}, category: {category}, subcategory: {cate}, Cell value: {value} Price value: {price_value}"
-                # )
                 if price_value:
                     try:
                         price_value = round(float(price_value), 2)
@@ -838,7 +1021,6 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
 
     # Pivot the DataFrame and reset the index
     if not summary_df.empty:
-        # print(summary_df)
         merged_df = summary_df.pivot_table(
             index=["Category", "Subcategory"],
             values=[
@@ -848,7 +1030,7 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
             ],
             aggfunc="first",
         ).reset_index()
-        # print(merged_df)
+
         # Ensure that only existing suppliers are used
         existing_suppliers = [
             supplier for supplier in supplier_names if supplier in merged_df.columns
@@ -874,13 +1056,14 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
                 grand_total_df = (
                     merged_df.groupby("Category")[numeric_columns].sum().reset_index()
                 )
-            # print(grand_total_df)
         except Exception as e:
             print(f"Error Creating Summary Table: {e}")
             return 0
     else:
         print("The summary_df is empty; ensure your input data is correct.")
         return 0
+
+    # Write the summary and grand total data to the summary sheet
     write_summary_to_sheet(merged_df, grand_total_df, summary_sheet)
     return 1
 
@@ -945,12 +1128,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-richtext_option = st.checkbox(
-    "Rich Text",
-    value=False,
-    key="richtext_option",
-    help="Keep all the original formatting within a cell when consolidating",
-)
+### Toggle between Rich Text and Plain Text, Rich Text will retain all original formatting but may generate a warning message when opening the consolidated file. By uncommenting the line below, you can toggle between Rich Text and Plain Text. right now, Rich Text is set to True by default.
+
+# richtext_option = st.checkbox(
+#     "Rich Text",
+#     value=False,
+#     key="richtext_option",
+#     help="Keep all the original formatting within a cell when consolidating",
+# )
+
+st.session_state.richtext_option = True
 
 ### Pricing Sheets Consolidation
 
@@ -982,7 +1169,6 @@ st.radio(
     key="pri_comb_mode",
 )
 
-# st.write(f"### Current Mode: **{st.session_state.pri_comb_mode}**")
 
 if st.button("Consolidate", key="consolidate_pri"):
     consolidated_pri = openpyxl.Workbook()
