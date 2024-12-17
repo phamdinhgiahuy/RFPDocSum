@@ -1068,8 +1068,8 @@ def create_summary_price_table(summary_sheet, price_sheet, supplier_names):
     return 1
 
 
-# streamlit_app\kellanova_logo.png
-st.image(r"assets/kellanova_logo.png", width=200)
+# streamlit_app\
+# st.image(r"assets/", width=200)
 
 # Check if suppliers are set up
 if "suppliers" not in st.session_state or len(st.session_state.suppliers) == 0:
@@ -1102,7 +1102,7 @@ for i, supplier in enumerate(st.session_state.suppliers):
 event_name = st.session_state.event_name
 event_option = st.session_state.event_option
 # logo path
-st.session_state.logo_path = r"assets/kellanova_logo.png"
+st.session_state.logo_path = r"assets/"
 doc_type1, doc_type2 = st.session_state.doc_types
 
 
@@ -1206,7 +1206,7 @@ if st.button("Consolidate", key="consolidate_pri"):
             consolidated_pri = separate_sheet_combine(
                 consolidated_pri, template_sheets_pri, sheets_pri_dict
             )
-        consolidated_pri = append_logo(consolidated_pri, st.session_state.logo_path)
+        # consolidated_pri = append_logo(consolidated_pri, st.session_state.logo_path)
         file_stream_p = save_consolidated_file(consolidated_pri)
     if file_stream_p is None:
         st.error("Failed to save the consolidated file. Please try again.")

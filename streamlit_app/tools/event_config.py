@@ -27,7 +27,7 @@ def initialize_session_state():
 
 initialize_session_state()
 # Configuration form
-st.image(r"assets/kellanova_logo.png", width=200)
+# st.image(r"assets/", width=200)
 st.write("# RFP Event Configuration")
 
 # Event name

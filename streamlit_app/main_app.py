@@ -3,7 +3,7 @@ import streamlit as st
 
 # Main page with guiding info (help section)
 def main_page():
-    st.image(r"assets/kellanova_logo.png", width=200)
+    # st.image(r"", width=200)
     st.title("Welcome to the Automated RFP Tool")
 
     st.markdown("### :blue[▶️ Where to start?]")
