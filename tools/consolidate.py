@@ -1,5 +1,8 @@
 import streamlit as st
+import nltk
 
+nltk.download("punkt")
+nltk.download("punkt_tab")
 import openpyxl
 from openpyxl import load_workbook
 from openpyxl.cell.rich_text import TextBlock, CellRichText
@@ -1286,7 +1289,7 @@ if st.button("Consolidate", key="consolidate_ques"):
             consolidated_ques = separate_sheet_combine(
                 consolidated_ques, template_sheets_ques, sheets_ques_dict
             )
-        consolidated_ques = append_logo(consolidated_ques, st.session_state.logo_path)
+        # consolidated_ques = append_logo(consolidated_ques, st.session_state.logo_path)
         file_stream_q = save_consolidated_file(consolidated_ques)
 
     # save to session state
